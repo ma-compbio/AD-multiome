@@ -1,0 +1,683 @@
+
+
+############################
+# load pre-computed RNA Seurat object
+############################
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(cowplot)
+library(ggrepel)
+library(DESeq2)
+library(Seurat)
+library(SeuratDisk)
+library(SeuratExtend)
+library(anndataR)
+library(umap)
+library(ggrastr)
+# load pre-computed Seurat object
+obj <- readRDS(file = "shared_xinyue/RNA/202501/AD_rna_annotated.rds")
+# get he total number of counts in each cells
+data_expr_counts <- Matrix::colSums(obj[['RNA']]$counts)
+data_expr_log_norm <- Matrix::colSums(obj[['RNA']]$data)
+data_expr_scaled <- Matrix::colSums(obj[['RNA']]$scale.data)
+all(names(data_expr_counts) == names(data_expr_log_norm))
+all(names(data_expr_counts) == names(data_expr_scaled))
+data_expr <- data.frame(cell_id = names(data_expr_counts),
+                        counts = data_expr_counts,
+                        log_norm = data_expr_log_norm,
+                        scaled = data_expr_scaled)
+# load existing gene annotation
+gene_anno <- read.table(file = "annotation/gencode.v47.gene_info.tsv", header = T, sep = '\t', stringsAsFactors = F)
+gene_anno <- gene_anno %>%
+  filter(longest_transcript == 'Yes') 
+# check feature name against gene_anno
+gene_feature_table = data.frame(gene_name = Features(obj))
+gene_feature_table <- merge(gene_feature_table, gene_anno[, c("gene_name", "gene_id", "gene_type")], by = "gene_name", sort = F)
+# get only protein coding genes
+obj_protein_coding <- obj[which(gene_feature_table$gene_type == "protein_coding"), ]
+data_expr_counts <- Matrix::colSums(obj_protein_coding[['RNA']]$counts)
+data_expr_log_norm <- Matrix::colSums(obj_protein_coding[['RNA']]$data)
+data_expr_protein_coding_only <- data.frame(cell_id = names(data_expr_counts),
+                                            counts = data_expr_counts,
+                                            log_norm = data_expr_log_norm)
+# check existing meta data
+#obj[[]]
+data_rna_meta <- obj[[c('nCount_RNA', 'nFeature_RNA', 'major_cell_type', 'sub_cell_type', 'sample_id', 'sex', 'condition')]]
+data_rna_meta$cell_id <- rownames(data_rna_meta)
+colnames(data_rna_meta) <- c("nCount_RNA", "nFeature_RNA", "major", "sub", "projid", "gender", "disease_group", "cell_id")
+# plot the global distribution of RNA
+data_expr <- merge(data_expr, data_rna_meta[, c("cell_id", "major", "sub", "gender", "disease_group")], by = "cell_id", sort = F)
+data_expr_protein_coding_only <- merge(data_expr_protein_coding_only, data_rna_meta[, c("cell_id", "major", "sub", "gender", "disease_group")], by = "cell_id", sort = F)
+
+######################
+# get PCA embedding
+######################
+data_rna_pca <- as.data.frame(Embeddings(obj, reduction = "pca"))
+write.table(data_rna_pca, file = "results/202501/gene_expr/AD_rna_PCA.tsv", col.names = T, row.names = T, sep = '\t', quote = F)
+
+######################
+# get UMAP embedding - RNA
+######################
+data_rna_embedding <- as.data.frame(Embeddings(obj, reduction = "umap"))
+data_rna_embedding$cell_id <- rownames(data_rna_embedding)
+# merge cell meta
+data_rna_meta <- merge(data_rna_meta, data_rna_embedding, by = "cell_id", sort = F)
+
+######################
+# get UMAP embedding - Hi-C
+######################
+# load fast-higashi embedding
+data_hic_fast_higashi <- read_h5ad("shared_ruochi/250121_AD_Higashi/fh_embedding_v2.h5ad")
+data_hic_embedding_raw = data_hic_fast_higashi$X
+set.seed(202502)
+data_hic_embedding_umap <- umap(data_hic_embedding_raw)
+data_hic_umap <- data.frame(cell_id = rownames(data_hic_fast_higashi$obs), hic_umap_1 = data_hic_embedding_umap$layout[, 1], hic_umap_2 = data_hic_embedding_umap$layout[, 2])
+
+# merge rna with hic
+data_rna_meta <- merge(data_rna_meta, data_hic_umap, by = "cell_id", sort = F)
+
+# 
+cell_embedding_label <- data_rna_meta %>%
+  group_by(sub) %>%
+  summarise(rna_umap_label_1 = mean(umap_1), rna_umap_label_2 = mean(umap_2), hic_umap_label_1 = mean(hic_umap_1), hic_umap_label_2 = mean(hic_umap_2))
+
+########################
+# save the data
+########################
+write.table(data_rna_meta, file = "results/202501/gene_expr/AD_rna_annotated.meta.v2.tsv", col.names = T, row.names = F, sep = '\t', quote = F)
+
+
+########################
+# Ploting the embedding for RNA and hic
+########################
+panel_embedding_hic_sub <- data_rna_meta %>%
+  ggplot(aes(x = hic_umap_1, y = hic_umap_2, color = sub)) +
+  rasterise(geom_point(alpha = 0.8, size = 1), dpi = 600) +
+  geom_text_repel(data = cell_embedding_label,  aes(x = hic_umap_label_1, y = hic_umap_label_2, label = sub), size = 7, max.overlaps = Inf) +
+  xlab("") +
+  ylab("") +
+  scale_color_manual(name = "", values = c("Astro" = "#665d48", "Endo" = "#8e6c62", "Exc L2/3 IT" = "#b4d335", "Exc L4 IT" = "#61c4b2", 
+                                          "Exc L5 ET" = "#0c5b79", "Exc L5 IT" = "#4eb2ad", "Exc L5/6 NP" = "#3c9e64", "Exc L6 CT" = "#2d8db9", 
+                                          "Exc L6 IT" = "#a19935", "Exc L6 IT Car3" = "#5352a3", "Exc L6b" = "#6f4a9e", 
+                                          "Inh Chandelier" = "#e94b9b", "Inh Lamp5" = "#da808d", "Inh PAX6" = "#702b8b", "Inh Pvalb" = "#d93037", 
+                                          "Inh Sncg" = "#b57bb5", "Inh Sst" = "#f8981d", "Inh Vip" = "#9a62a8",  
+                                          "Micro" = "#95ae96", "Oligo" = "#53776c", "OPC" = "#384a46", "VLMC" = "#6b7257",
+                                          "Exc-Lowexpr" = "#b3cde3", "Oligo-Lowexpr" = "#fbb4ae")) +
+  coord_fixed() +
+  theme_cowplot() +
+  theme(axis.title = element_blank(), axis.ticks = element_blank(), axis.text = element_blank())
+panel_embedding_rna_sub <- data_rna_meta %>%
+  ggplot(aes(x = umap_1, y = umap_2, color = sub)) +
+  rasterise(geom_point(alpha = 0.8, size = 1), dpi = 600) +
+  geom_text_repel(data = cell_embedding_label,  aes(x = rna_umap_label_1, y = rna_umap_label_2, label = sub), size = 7) +
+  xlab("") +
+  ylab("") +
+  scale_color_manual(name = "", values =  c("Astro" = "#665d48", "Endo" = "#8e6c62", "Exc L2/3 IT" = "#b4d335", "Exc L4 IT" = "#61c4b2", 
+                                          "Exc L5 ET" = "#0c5b79", "Exc L5 IT" = "#4eb2ad", "Exc L5/6 NP" = "#3c9e64", "Exc L6 CT" = "#2d8db9", 
+                                          "Exc L6 IT" = "#a19935", "Exc L6 IT Car3" = "#5352a3", "Exc L6b" = "#6f4a9e", 
+                                          "Inh Chandelier" = "#e94b9b", "Inh Lamp5" = "#da808d", "Inh PAX6" = "#702b8b", "Inh Pvalb" = "#d93037", 
+                                          "Inh Sncg" = "#b57bb5", "Inh Sst" = "#f8981d", "Inh Vip" = "#9a62a8",  
+                                          "Micro" = "#95ae96", "Oligo" = "#53776c", "OPC" = "#384a46", "VLMC" = "#6b7257",
+                                          "Exc-Lowexpr" = "#b3cde3", "Oligo-Lowexpr" = "#fbb4ae")) +
+  coord_fixed() +
+  theme_cowplot() +
+  theme(axis.title = element_blank(), axis.ticks = element_blank(), axis.text = element_blank())
+#
+pdf(file = "R_notebook_figures/2025_Feb/figure_overview_cell_embedding.sub.v2.pdf", width = 12, height = 20)
+plot_grid(panel_embedding_rna_sub, panel_embedding_hic_sub, ncol = 1, align = "h", axis = "lr")
+dev.off()
+#  UMAP for other information
+library(RColorBrewer)
+color_20_sample <- colorRampPalette(brewer.pal(n = 11, name = "Spectral"))(20)
+# 
+panel_embedding_rna_projid <- data_rna_meta %>%
+  ggplot(aes(x = umap_1, y = umap_2, color = factor(projid))) +
+  rasterise(geom_point(alpha = 0.4, size = 0.6), dpi = 600) +
+  xlab("") +
+  ylab("") +
+  ggtitle("Sample") +
+  scale_color_manual(name = "Patient id", values = color_20_sample) +
+  theme_cowplot() +
+  theme(axis.title = element_blank(), axis.ticks = element_blank(), axis.text = element_blank()) +
+  theme(axis.line = element_blank(), panel.border = element_rect(linewidth = 1, color= "black"))
+panel_embedding_rna_disease_group <- data_rna_meta %>%
+  ggplot(aes(x = umap_1, y = umap_2, color = disease_group)) +
+  rasterise(geom_point(alpha = 0.4, size = 0.6), dpi = 600) +
+  xlab("") +
+  ylab("") +
+  ggtitle("Disease group") +
+  scale_color_manual(name = "", values = c("AD" = "#f1a340", "CT" = "#998ec3")) +
+  theme_cowplot() +
+  theme(axis.title = element_blank(), axis.ticks = element_blank(), axis.text = element_blank()) +
+  theme(axis.line = element_blank(), panel.border = element_rect(linewidth = 1, color= "black"))
+panel_embedding_rna_gender <- data_rna_meta %>%
+  ggplot(aes(x = umap_1, y = umap_2, color = gender)) +
+  rasterise(geom_point(alpha = 0.4, size = 0.6), dpi = 600) +
+  xlab("") +
+  ylab("") +
+  ggtitle("Gender") +
+  scale_color_manual(name = "", values = c("Female" = "#7fbf7b", "Male" = "#af8dc3")) +
+  theme_cowplot() +
+  theme(axis.title = element_blank(), axis.ticks = element_blank(), axis.text = element_blank()) +
+  theme(axis.line = element_blank(), panel.border = element_rect(linewidth = 1, color= "black"))
+#
+panel_embedding_hic_projid <- data_rna_meta %>%
+  ggplot(aes(x = hic_umap_1, y = hic_umap_2, color = factor(projid))) +
+  rasterise(geom_point(alpha = 0.4, size = 0.6), dpi = 600) +
+  xlab("") +
+  ylab("") +
+  ggtitle("Sample") +
+  scale_color_manual(name = "Patient id", values = color_20_sample) +
+  theme_cowplot() +
+  theme(axis.title = element_blank(), axis.ticks = element_blank(), axis.text = element_blank()) +
+  theme(axis.line = element_blank(), panel.border = element_rect(linewidth = 1, color= "black"))
+panel_embedding_hic_disease_group <- data_rna_meta %>%
+  ggplot(aes(x = hic_umap_1, y = hic_umap_2, color = disease_group)) +
+  rasterise(geom_point(alpha = 0.4, size = 0.6), dpi = 600) +
+  xlab("") +
+  ylab("") +
+  ggtitle("Disease group") +
+  scale_color_manual(name = "", values = c("AD" = "#f1a340", "CT" = "#998ec3")) +
+  theme_cowplot() +
+  theme(axis.title = element_blank(), axis.ticks = element_blank(), axis.text = element_blank()) +
+  theme(axis.line = element_blank(), panel.border = element_rect(linewidth = 1, color= "black"))
+panel_embedding_hic_gender <- data_rna_meta %>%
+  ggplot(aes(x = hic_umap_1, y = hic_umap_2, color = gender)) +
+  rasterise(geom_point(alpha = 0.4, size = 0.6), dpi = 600) +
+  xlab("") +
+  ylab("") +
+  ggtitle("Gender") +
+  scale_color_manual(name = "", values = c("Female" = "#7fbf7b", "Male" = "#af8dc3")) +
+  theme_cowplot() +
+  theme(axis.title = element_blank(), axis.ticks = element_blank(), axis.text = element_blank()) +
+  theme(axis.line = element_blank(), panel.border = element_rect(linewidth = 1, color= "black"))
+pdf(file = "R_notebook_figures/2025_Feb/figure_overview_cell_embedding.sub.feature.v2.pdf", width = 21, height = 6)
+plot_grid(panel_embedding_rna_projid, panel_embedding_rna_disease_group, panel_embedding_rna_gender, nrow = 1, align = "h", axis = "tb")
+plot_grid(panel_embedding_hic_projid, panel_embedding_hic_disease_group, panel_embedding_hic_gender, nrow = 1, align = "h", axis = "tb")
+dev.off()
+```
+
+
+############################
+# Gene set analyese --- gene expression -- manuscript
+############################
+```{r}
+library(Seurat)
+library(Matrix)
+library(AUCell)
+library(GSEABase)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(cowplot)
+
+############################
+# load pre-computed Seurat object
+obj <- readRDS(file = "shared_xinyue/RNA/202501/AD_rna_annotated.rds")
+############################
+
+############################
+# Main function
+############################
+run_AUCell_major <- function(obj, cell_type) {
+  ###########################
+  # Define gene sets
+  ###########################
+  # load the gene set 
+  geneSets_c2 <- getGmt("annotation/c2.all.v2024.1.Hs.symbols.gmt")
+  # check how many genes in the gene sets
+  geneSets_c2 <- subsetGeneSets(geneSets_c2, rownames(obj)) 
+  geneSets_c2 <- setGeneSetNames(geneSets_c2, newNames=paste(names(geneSets_c2), " (", nGenes(geneSets_c2) ,"g)", sep=""))
+  # AD related gene pathway
+  gene_set_down_synaptic <- c("VGF", "NC13A", "RPH3A", "SLC30A3", "SV2B", "SVOP", "SYT12", "BDNF", "NPTX2")
+  gene_set_down_MIB <- c("IMMT", "CHCHD3", "DNAJC11", "CHCHD6")
+  gene_set_down_meta_of_lipid <- c("BDH1", "MECR", "GPCPD1", "MGLL", "HSD17B12")
+  gene_set_down_meta_of_cholesterol <- c("TM7SF2", "MSMO1", "FDPS", "IDI1", "MVD", "MVK", "HMGCR", "HMGCS1")
+  gene_set_up_mito <- c("MT-ND6", 'MT-ND5', "MT-ND4L", "MT-ND4", "MT-ND3", "MT-ND2", "MT-ND1", "MT-CYB", "MT-CO3", "MT-CO2", "MT-CO1", "MT-ATP8", "MT-ATP6")
+  gene_set_down_mito_oxph <- c("UQCRC2", "SDHA", "NDUFV1")
+  gene_set_down_mito_tRNA <- c("AIMP2", "FARSB", "RARS1", "RSRS2", "IARS1", "IARS2", "CARS1", "CARS2")
+  gene_set_down_mito_translation <- c("GFM1", "MRPS9", "MRPS25", "PTCD3", "MRPS16", "DAP3")
+  gene_set_up_meta_of_rna <- c("SF3B3", "DHX15", "DDX46", "HTATSF1", "DDX23", "C9orf78", "DHX9", "PRPF38B", "SRSF3", "SRSF4", "SRSF6", "SRSF8", "HNRNPA2B1", "HNRNPH3", "SRRT", "MBNL1", "UPF1", "UPF2")
+  gene_set_astro_up_cell_death_oxygen <- c("APOE", "CST3", "PSAP", "RGCC", "CLU", "FAIM2", "GAPDH", "PRDX1", "MEF2C", "HGF", "HSP90AB1", "USP53", "EGLN3", "PTPRK", "PRDX6", "OXR1", "DDIT4", "SESN1", "THRB", "GSN", "SOD2", "HSPA1A", "PPARGC1A", "NR4A3", "SLC7A11", "ANO6", "HSPB1", "TFDP2", "FANCC", "BNIP3L", "PDE8A", "PRKN")
+  gene_set_astro_up_lipid_storage <- c("AQP1", "OSBPL11", "LRAT", "PAM", "FOXP1", "MAOB", "C3", "ABCA1", "NR4A3", "FBXO32", "IRS2", "HILPDA", "PADI2", "SPARC", "AKAP13", "PPARGC1A", "ACACB", "NTRK3", "FAM107A", "PLPP1", "TGFB2", "PLIN5", "FOXO1")
+  gene_set_astro_down_angiogenesis <- c("PML", "F3", "NRP1", "SULF1", "GADD45A", "ANGPTL4", "VEGFA", "ACTG1", "RHOB", "ACTB", "ID1")
+  #
+  geneSets_AD_1 <- GeneSet(gene_set_down_synaptic, setName=paste0("AD_neuron_Synaptic_DOWN", " (", length(gene_set_down_synaptic), "g)"))
+  geneSets_AD_2 <- GeneSet(gene_set_down_MIB, setName=paste0("AD_neuron_MIB_DOWN", " (", length(gene_set_down_MIB), "g)"))
+  geneSets_AD_3 <- GeneSet(gene_set_down_meta_of_lipid, setName=paste0("AD_neuron_Meta_of_lipid_DOWN", " (", length(gene_set_down_meta_of_lipid), "g)"))
+  geneSets_AD_4 <- GeneSet(gene_set_down_meta_of_cholesterol, setName=paste0("AD_neuron_Meta_of_cholesterol_DOWN", " (", length(gene_set_down_meta_of_cholesterol), "g)"))
+  geneSets_AD_5 <- GeneSet(gene_set_down_mito_oxph, setName=paste0("AD_neuron_Mito_Oxph_DOWN", " (", length(gene_set_down_mito_oxph), "g)"))
+  geneSets_AD_6 <- GeneSet(gene_set_down_mito_tRNA, setName=paste0("AD_neuron_Mito_tRNA_DOWN", " (", length(gene_set_down_mito_tRNA), "g)"))
+  geneSets_AD_7 <- GeneSet(gene_set_down_mito_translation, setName=paste0("AD_neuron_Mito_translation_DOWN", " (", length(gene_set_down_mito_translation), "g)"))
+  geneSets_AD_8 <- GeneSet(gene_set_up_mito, setName=paste0("AD_neuron_Mito_UP", " (", length(gene_set_up_mito), "g)"))
+  geneSets_AD_9 <- GeneSet(gene_set_up_meta_of_rna, setName=paste0("AD_neuron_Meta_of_RNA_UP", " (", length(gene_set_up_meta_of_rna), "g)"))
+  geneSets_AD_10 <- GeneSet(gene_set_astro_up_cell_death_oxygen, setName=paste0("AD_Astro_Cell_death_oxygen_UP", " (", length(gene_set_astro_up_cell_death_oxygen), "g)"))
+  geneSets_AD_11 <- GeneSet(gene_set_astro_up_lipid_storage, setName=paste0("AD_Astro_Lipid_storage_UP", " (", length(gene_set_astro_up_lipid_storage), "g)"))
+  geneSets_AD_12 <- GeneSet(gene_set_astro_down_angiogenesis, setName=paste0("AD_Astro_Angiogenesis_DOWN", " (", length(gene_set_astro_down_angiogenesis), "g)"))
+  
+  ############################
+  # cell type specific DEG analysis
+  ############################
+  gene_deg <- read.table(file = paste0("results/202501/gene_expr/pseudobulk_DEG/major_noControlGeneSet.", cell_type, ".tsv"), header = T, sep = '\t', stringsAsFactors = F)
+  
+  ############################
+  # select cell by major cell type & gene deg
+  ############################
+  # check major cell type
+  unique(obj$major_cell_type)
+  obj_major_cell <- subset(x = obj, subset = major_cell_type == cell_type)
+  # 
+  available_genes <- rownames(obj_major_cell)
+  deg_gene_list <- subset(gene_deg, pvalue < 0.5)$gene_name
+  genes_to_keep <- intersect(available_genes, deg_gene_list)
+  cat(paste0("Number of total gene ", length(available_genes), '\n'))
+  cat(paste0("Number of DEG gene ", length(deg_gene_list), '\n'))
+  cat(paste0("Number of shared gene ", length(genes_to_keep), '\n'))
+  obj_filtered <- subset(obj_major_cell, features = genes_to_keep)
+  # extract count matrix 
+  gene_expr <-  GetAssayData(object = obj_filtered, assay = "RNA", layer = "counts")
+  # convert to sparse matrix
+  exprMatrix <- as(gene_expr, "dgCMatrix")
+  
+  ############################
+  # build final gene set & add random sample genes
+  ############################
+  # get house keeping genes in selected major cell types
+  set.seed(202503)
+  countsPerGene <- apply(exprMatrix, 1, function(x) sum(x>0))
+  hk_geneset <- GeneSet(sample(names(countsPerGene)[which(countsPerGene>quantile(countsPerGene, probs=.95))], 100), setName="HK-like (100g)")
+  # get random gene set
+  random_geneset_25 <- GeneSet(sample(rownames(exprMatrix), 50), setName="Random (25g)")
+  random_geneset_50 <- GeneSet(sample(rownames(exprMatrix), 50), setName="Random (50g)")
+  random_geneset_250 <- GeneSet(sample(rownames(exprMatrix), 50), setName="Random (250g)")
+  # merge geneSets
+  geneset_use <- GeneSetCollection(c(geneSets_c2, geneSets_AD_1, geneSets_AD_2, geneSets_AD_3, geneSets_AD_4, geneSets_AD_5, geneSets_AD_6, geneSets_AD_7, geneSets_AD_8, geneSets_AD_9, geneSets_AD_10, geneSets_AD_11, geneSets_AD_12, hk_geneset, random_geneset_25, random_geneset_50, random_geneset_250))
+  cat(paste0("There are in total ", length(geneset_use), "gene sets", '\n'))
+  tail(names(geneset_use), 30)
+  
+  ############################
+  # AUCell run
+  ############################
+  # test run, sample 5000 cells and 500 gene sets
+  #exprMatrix_sample <- exprMatrix[, sample(ncol(exprMatrix), 5000)]
+  #
+  cat(paste0("The dimimenstion of final expression matrix ", dim(exprMatrix), '\n'))
+  # convert the gene expression into ranking 
+  cells_rankings <- AUCell_buildRankings(exprMatrix, plotStats=TRUE, BPPARAM=BiocParallel::MulticoreParam(32), verbose = T)
+  #plotGeneCount
+  # score the gene signature score 
+  cells_AUC <- AUCell_calcAUC(geneset_use, cells_rankings, verbose = T, nCores = 32)
+  # get the AUCresult
+  data_result <- getAUC(cells_AUC)
+  data_result <- as.data.frame(data_result)
+  data_result$gene_set <- rownames(data_result)
+  data_result <- data_result %>%
+    pivot_longer(cols = starts_with("hPFC"), names_to = "cell_id", values_to = "score")
+  
+  ############################
+  # Differential analysis
+  ############################
+  # load cell annotation
+  data_cell_anno <- read.table(file = "results/202501/cell_meta_table.tsv", header = T, sep = '\t', stringsAsFactors = F)
+  # merge result with cell annotation
+  data_result <- merge(data_result, data_cell_anno[, c("cell_id", "projid", "disease_group", "gender", "sub", "major")], by = "cell_id", sort = F)
+  # aggegrate results by disease_group and use 
+  data_result_agg <- data_result %>%
+    group_by(gene_set, disease_group) %>%
+    summarise(n_cell = n(), score_ave = mean(score, na.rm = T))
+  # wilcoxon test
+  data_result_agg_test <- data_result %>%
+    group_by(gene_set) %>%
+    summarise(
+      wilcox_test_p_value = wilcox.test(score ~ disease_group)$p.value
+    )
+  # merge
+  data_result_agg <- merge(data_result_agg, data_result_agg_test, by = "gene_set", sort = F)
+  
+  ###########################
+  # Save the results
+  ###########################
+  save(cells_rankings, file = paste0("results/202501/gene_expr/AUCell/cell_ranking.", cell_type, ".Rdata"))
+  save(cells_AUC, file = paste0("results/202501/gene_expr/AUCell/cell_AUC.", cell_type, ".Rdata"))
+  save(geneset_use, file = paste0("results/202501/gene_expr/AUCell/cell_geneset.", cell_type, ".Rdata"))
+  write.table(data_result_agg, file = paste0("results/202501/gene_expr/AUCell/result_agg.", cell_type, ".tsv"), sep = '\t', col.names = T, row.names = F, quote = F)
+}
+run_AUCell_sub <- function(obj, cell_type) {
+  ###########################
+  # Define gene sets
+  ###########################
+  # load the gene set 
+  geneSets_c2 <- getGmt("annotation/c2.all.v2024.1.Hs.symbols.gmt")
+  # check how many genes in the gene sets
+  geneSets_c2 <- subsetGeneSets(geneSets_c2, rownames(obj)) 
+  geneSets_c2 <- setGeneSetNames(geneSets_c2, newNames=paste(names(geneSets_c2), " (", nGenes(geneSets_c2) ,"g)", sep=""))
+  # AD related gene pathway
+  gene_set_down_synaptic <- c("VGF", "NC13A", "RPH3A", "SLC30A3", "SV2B", "SVOP", "SYT12", "BDNF", "NPTX2")
+  gene_set_down_MIB <- c("IMMT", "CHCHD3", "DNAJC11", "CHCHD6")
+  gene_set_down_meta_of_lipid <- c("BDH1", "MECR", "GPCPD1", "MGLL", "HSD17B12")
+  gene_set_down_meta_of_cholesterol <- c("TM7SF2", "MSMO1", "FDPS", "IDI1", "MVD", "MVK", "HMGCR", "HMGCS1")
+  gene_set_up_mito <- c("MT-ND6", 'MT-ND5', "MT-ND4L", "MT-ND4", "MT-ND3", "MT-ND2", "MT-ND1", "MT-CYB", "MT-CO3", "MT-CO2", "MT-CO1", "MT-ATP8", "MT-ATP6")
+  gene_set_down_mito_oxph <- c("UQCRC2", "SDHA", "NDUFV1")
+  gene_set_down_mito_tRNA <- c("AIMP2", "FARSB", "RARS1", "RSRS2", "IARS1", "IARS2", "CARS1", "CARS2")
+  gene_set_down_mito_translation <- c("GFM1", "MRPS9", "MRPS25", "PTCD3", "MRPS16", "DAP3")
+  gene_set_up_meta_of_rna <- c("SF3B3", "DHX15", "DDX46", "HTATSF1", "DDX23", "C9orf78", "DHX9", "PRPF38B", "SRSF3", "SRSF4", "SRSF6", "SRSF8", "HNRNPA2B1", "HNRNPH3", "SRRT", "MBNL1", "UPF1", "UPF2")
+  gene_set_astro_up_cell_death_oxygen <- c("APOE", "CST3", "PSAP", "RGCC", "CLU", "FAIM2", "GAPDH", "PRDX1", "MEF2C", "HGF", "HSP90AB1", "USP53", "EGLN3", "PTPRK", "PRDX6", "OXR1", "DDIT4", "SESN1", "THRB", "GSN", "SOD2", "HSPA1A", "PPARGC1A", "NR4A3", "SLC7A11", "ANO6", "HSPB1", "TFDP2", "FANCC", "BNIP3L", "PDE8A", "PRKN")
+  gene_set_astro_up_lipid_storage <- c("AQP1", "OSBPL11", "LRAT", "PAM", "FOXP1", "MAOB", "C3", "ABCA1", "NR4A3", "FBXO32", "IRS2", "HILPDA", "PADI2", "SPARC", "AKAP13", "PPARGC1A", "ACACB", "NTRK3", "FAM107A", "PLPP1", "TGFB2", "PLIN5", "FOXO1")
+  gene_set_astro_down_angiogenesis <- c("PML", "F3", "NRP1", "SULF1", "GADD45A", "ANGPTL4", "VEGFA", "ACTG1", "RHOB", "ACTB", "ID1")
+  #
+  geneSets_AD_1 <- GeneSet(gene_set_down_synaptic, setName=paste0("AD_neuron_Synaptic_DOWN", " (", length(gene_set_down_synaptic), "g)"))
+  geneSets_AD_2 <- GeneSet(gene_set_down_MIB, setName=paste0("AD_neuron_MIB_DOWN", " (", length(gene_set_down_MIB), "g)"))
+  geneSets_AD_3 <- GeneSet(gene_set_down_meta_of_lipid, setName=paste0("AD_neuron_Meta_of_lipid_DOWN", " (", length(gene_set_down_meta_of_lipid), "g)"))
+  geneSets_AD_4 <- GeneSet(gene_set_down_meta_of_cholesterol, setName=paste0("AD_neuron_Meta_of_cholesterol_DOWN", " (", length(gene_set_down_meta_of_cholesterol), "g)"))
+  geneSets_AD_5 <- GeneSet(gene_set_down_mito_oxph, setName=paste0("AD_neuron_Mito_Oxph_DOWN", " (", length(gene_set_down_mito_oxph), "g)"))
+  geneSets_AD_6 <- GeneSet(gene_set_down_mito_tRNA, setName=paste0("AD_neuron_Mito_tRNA_DOWN", " (", length(gene_set_down_mito_tRNA), "g)"))
+  geneSets_AD_7 <- GeneSet(gene_set_down_mito_translation, setName=paste0("AD_neuron_Mito_translation_DOWN", " (", length(gene_set_down_mito_translation), "g)"))
+  geneSets_AD_8 <- GeneSet(gene_set_up_mito, setName=paste0("AD_neuron_Mito_UP", " (", length(gene_set_up_mito), "g)"))
+  geneSets_AD_9 <- GeneSet(gene_set_up_meta_of_rna, setName=paste0("AD_neuron_Meta_of_RNA_UP", " (", length(gene_set_up_meta_of_rna), "g)"))
+  geneSets_AD_10 <- GeneSet(gene_set_astro_up_cell_death_oxygen, setName=paste0("AD_Astro_Cell_death_oxygen_UP", " (", length(gene_set_astro_up_cell_death_oxygen), "g)"))
+  geneSets_AD_11 <- GeneSet(gene_set_astro_up_lipid_storage, setName=paste0("AD_Astro_Lipid_storage_UP", " (", length(gene_set_astro_up_lipid_storage), "g)"))
+  geneSets_AD_12 <- GeneSet(gene_set_astro_down_angiogenesis, setName=paste0("AD_Astro_Angiogenesis_DOWN", " (", length(gene_set_astro_down_angiogenesis), "g)"))
+  
+  ############################
+  # cell type specific DEG analysis
+  ############################
+  gene_deg <- read.table(file = paste0("results/202501/gene_expr/pseudobulk_DEG/sub_noControlGeneSet.", gsub("/", "_", gsub(" ", "_", cell_type)), ".tsv"), header = T, sep = '\t', stringsAsFactors = F)
+  
+  ############################
+  # select cell by major cell type & gene deg
+  ############################
+  # check major cell type
+  unique(obj$sub_cell_type)
+  obj_sub_cell <- subset(x = obj, subset = sub_cell_type == cell_type)
+  # 
+  available_genes <- rownames(obj_sub_cell)
+  deg_gene_list <- subset(gene_deg, pvalue < 0.5)$gene_name
+  genes_to_keep <- intersect(available_genes, deg_gene_list)
+  cat(paste0("Number of total gene ", length(available_genes), '\n'))
+  cat(paste0("Number of DEG gene ", length(deg_gene_list), '\n'))
+  cat(paste0("Number of shared gene ", length(genes_to_keep), '\n'))
+  obj_filtered <- subset(obj_sub_cell, features = genes_to_keep)
+  # extract count matrix 
+  gene_expr <-  GetAssayData(object = obj_filtered, assay = "RNA", layer = "counts")
+  # convert to sparse matrix
+  exprMatrix <- as(gene_expr, "dgCMatrix")
+  
+  ############################
+  # build final gene set & add random sample genes
+  ############################
+  # get house keeping genes in selected major cell types
+  set.seed(202503)
+  countsPerGene <- apply(exprMatrix, 1, function(x) sum(x>0))
+  hk_geneset <- GeneSet(sample(names(countsPerGene)[which(countsPerGene>quantile(countsPerGene, probs=.95))], 100), setName="HK-like (100g)")
+  # get random gene set
+  random_geneset_25 <- GeneSet(sample(rownames(exprMatrix), 50), setName="Random (25g)")
+  random_geneset_50 <- GeneSet(sample(rownames(exprMatrix), 50), setName="Random (50g)")
+  random_geneset_250 <- GeneSet(sample(rownames(exprMatrix), 50), setName="Random (250g)")
+  # merge geneSets
+  geneset_use <- GeneSetCollection(c(geneSets_c2, geneSets_AD_1, geneSets_AD_2, geneSets_AD_3, geneSets_AD_4, geneSets_AD_5, geneSets_AD_6, geneSets_AD_7, geneSets_AD_8, geneSets_AD_9, geneSets_AD_10, geneSets_AD_11, geneSets_AD_12, hk_geneset, random_geneset_25, random_geneset_50, random_geneset_250))
+  cat(paste0("There are in total ", length(geneset_use), "gene sets", '\n'))
+  tail(names(geneset_use), 30)
+  
+  ############################
+  # AUCell run
+  ############################
+  # test run, sample 5000 cells and 500 gene sets
+  #exprMatrix_sample <- exprMatrix[, sample(ncol(exprMatrix), 5000)]
+  #
+  cat(paste0("The dimimenstion of final expression matrix ", dim(exprMatrix), '\n'))
+  # convert the gene expression into ranking 
+  cells_rankings <- AUCell_buildRankings(exprMatrix, plotStats=TRUE, BPPARAM=BiocParallel::MulticoreParam(32), verbose = T)
+  #plotGeneCount
+  # score the gene signature score 
+  cells_AUC <- AUCell_calcAUC(geneset_use, cells_rankings, verbose = T, nCores = 32)
+  # get the AUCresult
+  data_result <- getAUC(cells_AUC)
+  data_result <- as.data.frame(data_result)
+  data_result$gene_set <- rownames(data_result)
+  data_result <- data_result %>%
+    pivot_longer(cols = starts_with("hPFC"), names_to = "cell_id", values_to = "score")
+  
+  ############################
+  # Differential analysis
+  ############################
+  # load cell annotation
+  data_cell_anno <- read.table(file = "results/202501/cell_meta_table.tsv", header = T, sep = '\t', stringsAsFactors = F)
+  # merge result with cell annotation
+  data_result <- merge(data_result, data_cell_anno[, c("cell_id", "projid", "disease_group", "gender", "sub", "major")], by = "cell_id", sort = F)
+  # aggegrate results by disease_group and use 
+  data_result_agg <- data_result %>%
+    group_by(gene_set, disease_group) %>%
+    summarise(n_cell = n(), score_ave = mean(score, na.rm = T))
+  # wilcoxon test
+  data_result_agg_test <- data_result %>%
+    group_by(gene_set) %>%
+    summarise(
+      wilcox_test_p_value = wilcox.test(score ~ disease_group)$p.value
+    )
+  # merge
+  data_result_agg <- merge(data_result_agg, data_result_agg_test, by = "gene_set", sort = F)
+  
+  ###########################
+  # Save the results
+  ###########################
+  cell_type = gsub("/", "_", gsub(" ", "_", cell_type))
+  save(cells_rankings, file = paste0("results/202501/gene_expr/AUCell/cell_ranking.", cell_type, ".Rdata"))
+  save(cells_AUC, file = paste0("results/202501/gene_expr/AUCell/cell_AUC.", cell_type, ".Rdata"))
+  save(geneset_use, file = paste0("results/202501/gene_expr/AUCell/cell_geneset.", cell_type, ".Rdata"))
+  write.table(data_result_agg, file = paste0("results/202501/gene_expr/AUCell/result_agg.", cell_type, ".tsv"), sep = '\t', col.names = T, row.names = F, quote = F)
+}
+# main cell type
+run_AUCell_major(obj, "Astro")
+run_AUCell_major(obj, "Endo")
+run_AUCell_major(obj, "Exc")
+run_AUCell_major(obj, "Inh")
+run_AUCell_major(obj, "Oligo")
+run_AUCell_major(obj, "OPC")
+run_AUCell_major(obj, "Micro")
+run_AUCell_major(obj, "VLMC")
+# sub cell type
+run_AUCell_sub(obj, "Exc L2/3 IT")
+run_AUCell_sub(obj, "Exc L4 IT")
+#run_AUCell_sub(obj, "Exc L5 ET")
+run_AUCell_sub(obj, "Exc L5 IT")
+run_AUCell_sub(obj, "Exc L5/6 NP")
+run_AUCell_sub(obj, "Exc L6 CT")
+#run_AUCell_sub(obj, "Exc L6 IT")
+run_AUCell_sub(obj, "Exc L6 IT Car3")
+run_AUCell_sub(obj, "Exc L6b")
+run_AUCell_sub(obj, "Inh Chandelier")
+run_AUCell_sub(obj, "Inh Lamp5")
+run_AUCell_sub(obj, "Inh PAX6")
+run_AUCell_sub(obj, "Inh Pvalb")
+run_AUCell_sub(obj, "Inh Sncg")
+run_AUCell_sub(obj, "Inh Sst")
+run_AUCell_sub(obj, "Inh Vip")
+# summarize the results
+# major
+data_result_agg_expr_final_major <- data.frame()
+for (cell_type in c("Astro", "Endo", "Exc", "Inh", "Oligo", "OPC", "Micro", "VLMC")) {
+  data_result_agg_expr <- read.table(file = paste0("results/202501/gene_expr/AUCell/result_agg.", cell_type, ".tsv"), sep = '\t', header = T, stringsAsFactors = F)
+  data_result_agg_expr$cell_type <- cell_type
+  cat(cell_type, ", ")
+  data_result_agg_expr_final_major <- rbind(data_result_agg_expr_final_major, data_result_agg_expr)
+}
+data_result_agg_expr_final_major <- data_result_agg_expr_final_major %>%
+  dplyr::select(cell_type, gene_set, disease_group, score_ave, wilcox_test_p_value) %>%
+  pivot_wider(names_from = "disease_group", values_from = "score_ave") %>%
+  mutate(log2_ratio = log2((AD+1e-4)/(CT+1e-4)))
+# sub
+data_result_agg_expr_final_sub <- data.frame()
+for (cell_type in c("Astro", "Endo", "Exc L2/3 IT",  "Exc L4 IT", "Exc L5 IT", "Exc L5/6 NP", "Exc L6 CT", "Exc L6 IT Car3", "Exc L6b", "Inh Chandelier", "Inh Lamp5", "Inh PAX6", "Inh Pvalb", "Inh Sncg", "Inh Sst", "Inh Vip", "Oligo", "OPC", "Micro", "VLMC")) {
+  data_result_agg_expr <- read.table(file = paste0("results/202501/gene_expr/AUCell/result_agg.", gsub("/", "_", gsub(" ", "_", cell_type)), ".tsv"), sep = '\t', header = T, stringsAsFactors = F)
+  data_result_agg_expr$cell_type <- cell_type
+  cat(cell_type, ", ")
+  data_result_agg_expr_final_sub <- rbind(data_result_agg_expr_final_sub, data_result_agg_expr)
+}
+data_result_agg_expr_final_sub <- data_result_agg_expr_final_sub %>%
+  dplyr::select(cell_type, gene_set, disease_group, score_ave, wilcox_test_p_value) %>%
+  pivot_wider(names_from = "disease_group", values_from = "score_ave") %>%
+  mutate(log2_ratio = log2((AD+1e-4)/(CT+1e-4)))
+# add the adjusted p-value column
+data_result_agg_expr_final_major <- data_result_agg_expr_final_major %>%
+  group_by(cell_type) %>%
+  mutate(wilcox_test_adjust_pval = p.adjust(wilcox_test_p_value, method = "BH"))
+data_result_agg_expr_final_sub <- data_result_agg_expr_final_sub %>%
+  group_by(cell_type) %>%
+  mutate(wilcox_test_adjust_pval = p.adjust(wilcox_test_p_value, method = "BH"))
+
+############################
+# heatmap plot
+############################
+#
+selected_sig_gene_set <- data_result_agg_expr_final_sub %>%
+  filter(grepl("KEGG_|REACTOME_|AD_", gene_set)) %>%
+  group_by(gene_set) %>%
+  summarise(minimal_pval = min(wilcox_test_p_value, na.rm = T))
+# count how many cell types with siginificant p-value
+selected_sig_gene_set_v2 <- data_result_agg_expr_final_sub %>%
+  filter(grepl("KEGG_|REACTOME_|AD_", gene_set)) %>%
+  filter(!cell_type %in% c("Astro", "Endo", "Micro", "Oligo", "OPC", "VLMC")) %>%
+  group_by(gene_set) %>%
+  summarise(count_sig_pval = sum(wilcox_test_p_value<0.05), mean_sig_pval = mean(-log10(wilcox_test_p_value))) %>%
+  arrange(-count_sig_pval, mean_sig_pval)
+# only on non-neurons
+selected_sig_gene_set_v3 <- data_result_agg_expr_final_sub %>%
+  #filter(grepl("KEGG_|REACTOME_|AD_", gene_set)) %>%
+  filter(cell_type %in% c("Astro", "Endo", "Micro", "Oligo", "OPC", "VLMC")) %>%
+  group_by(gene_set) %>%
+  summarise(count_sig_pval = sum(wilcox_test_p_value<0.05), mean_sig_pval = mean(-log10(wilcox_test_p_value))) %>%
+  arrange(-count_sig_pval, mean_sig_pval)
+# group important geneset/pathways
+gene_set_group_literature_Astro <- c("AD_Astro_Cell_death_oxygen_UP", "AD_Astro_Lipid_storage_UP", "AD_Astro_Angiogenesis_DOWN")
+gene_set_group_literature_Neuron <- c("AD_neuron_Mito_UP", "AD_neuron_Meta_of_RNA_UP", "AD_neuron_MIB_DOWN", "AD_neuron_Meta_of_lipid_DOWN", "AD_neuron_Mito_Oxph_DOWN", "AD_neuron_Mito_tRNA_DOWN", "AD_neuron_Mito_translation_DOWN", "AD_neuron_Synaptic_DOWN")
+gene_set_mRNA_splicing <- c("REACTOME_MRNA_SPLICING")
+gene_set_group_lipid_metabolism_Oxidations <- c("KEGG_OXIDATIVE_PHOSPHORYLATION", "REACTOME_METABOLISM_OF_LIPIDS" , "REACTOME_FREE_FATTY_ACIDS_REGULATE_INSULIN_SECRETION", "REACTOME_FATTY_ACIDS_BOUND_TO_GPR40_FFAR1_REGULATE_INSULIN_SECRETION", "REACTOME_BETA_OXIDATION_OF_VERY_LONG_CHAIN_FATTY_ACIDS", "REACTOME_BIOLOGICAL_OXIDATIONS")
+gene_set_group_neurual_system <- c("REACTOME_NERVOUS_SYSTEM_DEVELOPMENT", "REACTOME_NEURONAL_SYSTEM", "REACTOME_TRANSMISSION_ACROSS_CHEMICAL_SYNAPSES", "REACTOME_PROTEIN_PROTEIN_INTERACTIONS_AT_SYNAPSES")
+gene_set_group_neurotransmitter <- c("REACTOME_DOPAMINE_NEUROTRANSMITTER_RELEASE_CYCLE", "REACTOME_SEROTONIN_NEUROTRANSMITTER_RELEASE_CYCLE", "REACTOME_GLUTAMATE_NEUROTRANSMITTER_RELEASE_CYCLE")
+gene_set_group_ion <- c("REACTOME_ORGANIC_CATION_TRANSPORT", "REACTOME_VOLTAGE_GATED_POTASSIUM_CHANNELS", "REACTOME_POTASSIUM_CHANNELS")
+gene_set_calcineurin <- c("KEGG_MEDICUS_PATHOGEN_HCMV_US28_TO_GNAQ_PLCB_G_CALCINEURIN_SIGNALING_PATHWAY", "KEGG_MEDICUS_REFERENCE_CXCR4_GNAQ_PLCB_G_CALCINEURIN_SIGNALING_PATHWAY", "BIOCARTA_CALCINEURIN_PATHWAY")
+gene_set_other_pathway <- c("KEGG_MEDICUS_REFERENCE_GLYCOLYSIS", "REACTOME_REGULATION_OF_GENE_EXPRESSION_BY_HYPOXIA_INDUCIBLE_FACTOR", "KEGG_MEDICUS_REFERENCE_MGLUR5_CA2_APOPTOTIC_PATHWAY", "REACTOME_SIGNALING_BY_VEGF")
+gene_set_group_disease <- c("KEGG_PARKINSONS_DISEASE", "BLALOCK_ALZHEIMERS_DISEASE_UP", "BLALOCK_ALZHEIMERS_DISEASE_DN", "WP_ALZHEIMERS_DISEASE", "KEGG_ALZHEIMERS_DISEASE")
+gene_set_summary <- data.frame(gene_set = c(gene_set_group_literature_Astro, 
+                                            gene_set_group_literature_Neuron, 
+                                            gene_set_mRNA_splicing, 
+                                            gene_set_group_lipid_metabolism_Oxidations, 
+                                            gene_set_group_neurual_system, 
+                                            gene_set_group_neurotransmitter, 
+                                            gene_set_group_ion, 
+                                            gene_set_calcineurin, 
+                                            gene_set_other_pathway,
+                                            gene_set_group_disease),
+                               gene_set_label = c(rep("Astro (Sadick et al Neuron 2022)", length(gene_set_group_literature_Astro)),
+                                                   rep("Neuron (Mathys et al Cell 2023)", length(gene_set_group_literature_Neuron)),
+                                                   rep("mRNA splicing", length(gene_set_mRNA_splicing)),
+                                                   rep("Lilip metabolism and oxidation", length(gene_set_group_lipic_metabolism_Oxidations)),
+                                                   rep("Nervous system", length(gene_set_group_neurual_system)),
+                                                   rep("Neurotransmitter", length(gene_set_group_neurotransmitter)),
+                                                   rep("Ion channels", length(gene_set_group_ion)),
+                                                   rep("Calcineurin", length(gene_set_calcineurin)),
+                                                   rep("Other pathway", length(gene_set_other_pathway)),
+                                                   rep("AD related disease", length(gene_set_group_disease))
+                               ))
+# sub
+data_result_agg_expr_final_sub_selected <- data_result_agg_expr_final_sub %>%
+   mutate(gene_set = gsub(" .*", "", gene_set))
+data_result_agg_expr_final_sub_selected <-  merge(data_result_agg_expr_final_sub_selected, gene_set_summary, by = "gene_set")
+data_result_agg_expr_final_sub_selected$gene_set <- factor(data_result_agg_expr_final_sub_selected$gene_set, levels = gene_set_summary$gene_set)
+data_result_agg_expr_final_sub_selected$gene_set_label <- factor(data_result_agg_expr_final_sub_selected$gene_set_label, levels = c("Neuron (Mathys et al Cell 2023)", "Astro (Sadick et al Neuron 2022)", "AD related disease", "mRNA splicing", "Lilip metabolism and oxidation", "Nervous system", "Neurotransmitter", "Ion channels", "Calcineurin", "Other pathway"))
+# major
+data_result_agg_expr_final_major_selected <- data_result_agg_expr_final_major %>%
+   mutate(gene_set = gsub(" .*", "", gene_set))
+data_result_agg_expr_final_major_selected <-  merge(data_result_agg_expr_final_major_selected, gene_set_summary, by = "gene_set")
+data_result_agg_expr_final_major_selected$gene_set <- factor(data_result_agg_expr_final_major_selected$gene_set, levels = gene_set_summary$gene_set)
+data_result_agg_expr_final_major_selected$gene_set_label <- factor(data_result_agg_expr_final_major_selected$gene_set_label, levels = c("Neuron (Mathys et al Cell 2023)", "Astro (Sadick et al Neuron 2022)", "AD related disease", "mRNA splicing", "Lilip metabolism and oxidation", "Nervous system", "Neurotransmitter", "Ion channels", "Calcineurin", "Other pathway"))
+#
+panel_gene_set_summary_heatmap <- data_result_agg_expr_final_sub_selected %>%
+  mutate(cell_type = factor(cell_type, levels = c("Exc", "Exc L2/3 IT",  "Exc L4 IT", "Exc L5 IT", "Exc L5/6 NP", "Exc L6 CT", "Exc L6 IT Car3", "Exc L6b", "Inh", "Inh Chandelier", "Inh Lamp5", "Inh PAX6", "Inh Pvalb", "Inh Sncg", "Inh Sst", "Inh Vip", "Astro", "Oligo", "OPC", "Micro", "Endo", "VLMC"))) %>%
+  #filter(gene_set %in% selected_sig_gene_set$gene_set) %>%
+  filter(gene_set %in% gene_set_summary$gene_set) %>%
+  mutate(signed_pvalue = ifelse(log2_ratio > 0, -log10(wilcox_test_p_value), log10(wilcox_test_p_value))) %>%
+  mutate(is_sig = ifelse(wilcox_test_p_value < 0.05, "sig", "non-sig")) %>%
+  ggplot(aes(y = cell_type, x = gene_set, fill = signed_pvalue)) +
+  geom_tile(color = NA)  +
+  geom_point(aes(size=is_sig), pch = 18, color = "grey10") +
+  xlab("") + 
+  ylab("") +
+  facet_grid(. ~ gene_set_label, space = "free_x", scales = "free_x") +
+  scale_size_manual(name = "Signed p-value", values = c("sig" = 4, "non-sig" = NA), guide="none") +
+  scale_fill_gradientn(colours = c("#0571b0", "#f7f7f7", "#ca0020"), 
+                       values = scales::rescale(c(-4,0,4)),
+                       guide = "colorbar", limits=c(-4,4), oob = scales::squish) +
+  scale_x_discrete(expand = c(0,0)) +
+  scale_y_discrete(expand = c(0,0), limits = rev) +
+  theme_cowplot() +
+  theme(axis.line = element_blank(), panel.border = element_rect(color = "black", linewidth = 1)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 5)) +
+  #theme(axis.text.y = element_text()) +
+  theme(strip.background = element_blank()) +
+  theme(strip.clip = 'off') +
+  theme(strip.text.x = element_text(angle = 45, hjust = 0, vjust = 0))
+panel_gene_set_summary_heatmap_use_adjusted_pval <- data_result_agg_expr_final_sub_selected %>%
+  mutate(cell_type = factor(cell_type, levels = c("Exc", "Exc L2/3 IT",  "Exc L4 IT", "Exc L5 IT", "Exc L5/6 NP", "Exc L6 CT", "Exc L6 IT Car3", "Exc L6b", "Inh", "Inh Chandelier", "Inh Lamp5", "Inh PAX6", "Inh Pvalb", "Inh Sncg", "Inh Sst", "Inh Vip", "Astro", "Oligo", "OPC", "Micro", "Endo", "VLMC"))) %>%
+  #filter(gene_set %in% selected_sig_gene_set$gene_set) %>%
+  filter(gene_set %in% gene_set_summary$gene_set) %>%
+  mutate(signed_qvalue = ifelse(log2_ratio > 0, -log10(wilcox_test_adjust_pval), log10(wilcox_test_adjust_pval))) %>%
+  mutate(is_sig = ifelse(wilcox_test_adjust_pval < 0.05, "sig", "non-sig")) %>%
+  ggplot(aes(y = cell_type, x = gene_set, fill = signed_qvalue)) +
+  geom_tile(color = NA)  +
+  geom_point(aes(size=is_sig), pch = 18, color = "grey10") +
+  xlab("") + 
+  ylab("") +
+  facet_grid(. ~ gene_set_label, space = "free_x", scales = "free_x") +
+  scale_size_manual(name = "Signed p-value", values = c("sig" = 4, "non-sig" = NA), guide="none") +
+  scale_fill_gradientn(colours = c("#0571b0", "#f7f7f7", "#ca0020"), 
+                       values = scales::rescale(c(-3,0,3)),
+                       guide = "colorbar", limits=c(-3,3), oob = scales::squish) +
+  scale_x_discrete(expand = c(0,0)) +
+  scale_y_discrete(expand = c(0,0), limits = rev) +
+  theme_cowplot() +
+  theme(axis.line = element_blank(), panel.border = element_rect(color = "black", linewidth = 1)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 5)) +
+  #theme(axis.text.y = element_text()) +
+  theme(strip.background = element_blank()) +
+  theme(strip.clip = 'off') +
+  theme(strip.text.x = element_text(angle = 45, hjust = 0, vjust = 0))
+pdf(file = "R_notebook_figures/2025_Feb/figure_geneset_gene_expr_heatmap.pdf", width = 15, height = 10)
+print(panel_gene_set_summary_heatmap)
+print(panel_gene_set_summary_heatmap_use_adjusted_pval)
+dev.off()
+# heatmap for major cell type
+panel_gene_set_summary_heatmap_major <- data_result_agg_expr_final_major_selected %>%
+  mutate(cell_type = factor(cell_type, levels = c("Exc", "Exc L2/3 IT",  "Exc L4 IT", "Exc L5 IT", "Exc L5/6 NP", "Exc L6 CT", "Exc L6 IT Car3", "Exc L6b", "Inh", "Inh Chandelier", "Inh Lamp5", "Inh PAX6", "Inh Pvalb", "Inh Sncg", "Inh Sst", "Inh Vip", "Astro", "Oligo", "OPC", "Micro", "Endo", "VLMC"))) %>%
+  #filter(gene_set %in% selected_sig_gene_set$gene_set) %>%
+  filter(gene_set %in% gene_set_summary$gene_set) %>%
+  mutate(signed_pvalue = ifelse(log2_ratio > 0, -log10(wilcox_test_p_value), log10(wilcox_test_p_value))) %>%
+  mutate(is_sig = ifelse(wilcox_test_p_value < 0.05, "sig", "non-sig")) %>%
+  ggplot(aes(y = cell_type, x = gene_set, fill = signed_pvalue)) +
+  geom_tile(color = NA)  +
+  geom_point(aes(size=is_sig), pch = 18, color = "grey10") +
+  xlab("") + 
+  ylab("") +
+  facet_grid(. ~ gene_set_label, space = "free_x", scales = "free_x") +
+  scale_size_manual(name = "Signed p-value", values = c("sig" = 4, "non-sig" = NA), guide="none") +
+  scale_fill_gradientn(colours = c("#0571b0", "#f7f7f7", "#ca0020"), 
+                       values = scales::rescale(c(-4,0,4)),
+                       guide = "colorbar", limits=c(-4,4), oob = scales::squish) +
+  scale_x_discrete(expand = c(0,0)) +
+  scale_y_discrete(expand = c(0,0), limits = rev) +
+  theme_cowplot() +
+  theme(axis.line = element_blank(), panel.border = element_rect(color = "black", linewidth = 1)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 5)) +
+  #theme(axis.text.y = element_text()) +
+  theme(strip.background = element_blank()) +
+  theme(strip.clip = 'off') +
+  theme(strip.text.x = element_text(angle = 45, hjust = 0, vjust = 0))
+pdf(file = "R_notebook_figures/2025_Feb/figure_geneset_gene_expr_heatmap.major.pdf", width = 15, height = 8)
+print(panel_gene_set_summary_heatmap_major)
+dev.off()
+# save the results
+write.table(data_result_agg_expr_final_sub_selected, file = "R_notebook_figures/2025_Feb/figure_geneset_gene_expr_heatmap.table.tsv", sep = '\t', row.names = F, col.names = T, quote = F)
+```

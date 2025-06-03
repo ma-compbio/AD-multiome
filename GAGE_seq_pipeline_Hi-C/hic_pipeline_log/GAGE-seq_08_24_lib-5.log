@@ -1,0 +1,34 @@
+
+Summary of the config file:
+Creating jobs for the following tasks:  demultiplex, alignment, bam2pair
+
+Input fastq file:
+        R1: /ocean/projects/bio240015p/shared/AD_project/data/GAGE-seq_08_2024/hPFC-scHiC-lib-5/hPFC-scHiC-lib-5_1.fastq.gz
+        R2: /ocean/projects/bio240015p/shared/AD_project/data/GAGE-seq_08_2024/hPFC-scHiC-lib-5/hPFC-scHiC-lib-5_2.fastq.gz
+Output folder:
+        /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/
+Slurm script folder:
+        /ocean/projects/bio240015p/shared/AD_project/hic_jobs/
+
+Job: demultiplex
+Warning: mem per core is exceeded, reset it to 1.8G per core or use the RM queue
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_24_08_lib-5/hPFC-scHiC_24_08_lib-5.demultiplex.sbatch.sh already exists, running the script will overwrite result files
+        Slurm script: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_24_08_lib-5/hPFC-scHiC_24_08_lib-5.demultiplex.sbatch.sh
+        Output R1: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_08_lib-5/hPFC-scHiC_24_08_lib-5_demulti_R1.fastq
+        Output R2: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_08_lib-5/hPFC-scHiC_24_08_lib-5_demulti_R2.fastq
+
+Job: alignment
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_24_08_lib-5/hPFC-scHiC_24_08_lib-5.alignment.sbatch.sh already exists, overwriting it
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_08_lib-5/hPFC-scHiC_24_08_lib-5_alignment.bam already exists, overwriting it
+        Slurm script: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_24_08_lib-5/hPFC-scHiC_24_08_lib-5.alignment.sbatch.sh
+        Input R1: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_08_lib-5/hPFC-scHiC_24_08_lib-5_demulti_R1.fastq
+        Input R2: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_08_lib-5/hPFC-scHiC_24_08_lib-5_demulti_R2.fastq
+        Output file: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_08_lib-5/hPFC-scHiC_24_08_lib-5_alignment.bam
+
+Job: parse bam aligment to pairs
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_24_08_lib-5/hPFC-scHiC_24_08_lib-5.bam2pair.sbatch.sh already exists, overwriting it
+        Slurm script: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_24_08_lib-5/hPFC-scHiC_24_08_lib-5.bam2pair.sbatch.sh
+        Input file: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_08_lib-5/hPFC-scHiC_24_08_lib-5_alignment.bam
+        Output file: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_08_lib-5/complete/hPFC-scHiC_24_08_lib-5.pairs.gz
+        Output file: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_08_lib-5/wowalk/hPFC-scHiC_24_08_lib-5.pairs.gz
+

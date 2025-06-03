@@ -1,0 +1,59 @@
+---
+# a list of parameters for the GAGE-seq Hi-C part pipeline
+global:
+  # where to save script and working folder
+  working_folder: /ocean/projects/bio240015p/shared/AD_project/
+  script_folder: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_scripts/
+  script_version: 1.0
+  out_job_script_folder: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/
+  out_result_folder: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/
+  force_overwrite: True
+  ignore_input_check: True
+# sample spefic parameters
+sample:
+  sample_meta: NA
+# conda environment
+conda:
+  env_name: ad_project
+# script specific parameters
+# merge pair-end reads
+job_merge_pair:
+  slurm:
+    queue: RM-shared
+    time: 2-00:00:00
+    ntasks-per-node: 12
+    mem: 12Gb
+    log: log_merge_pair
+    name: GAGEseq_merge_pair
+  walk_policy: complete,wowalk
+  input_pair_list: [/ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_11_lib-26/<walk_policy>/hPFC-scHiC_24_11_lib-26.pairs.gz, /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_12_lib-26/<walk_policy>/hPFC-scHiC_24_12_lib-26.pairs.gz]
+  output_prefix: hPFC-scHiC_merge_lib-26
+# remove PCR duplication
+job_dedup:
+  slurm:
+    queue: RM-shared
+    time: 2-00:00:00
+    ntasks-per-node: 24
+    mem: 40Gb
+    log: log_dedup
+    name: GAGEseq_dedup
+  job_script: GAGE-seq_hic/HiC_dedup.v3.sh
+  walk_policy: complete,wowalk
+  script_dedup_CPP: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_scripts/GAGE-seq_hic/dedup_Hi-C_cpp
+  input_pair: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-26/<walk_policy>/hPFC-scHiC_merge_lib-26.pairs.gz
+  output_prefix: hPFC-scHiC_merge_lib-26
+# QC of pairs
+job_qc_pair:
+  slurm:
+    queue: RM-shared
+    time: 2-00:00:00
+    ntasks-per-node: 4
+    mem: 6Gb
+    log: log_dedup
+    name: GAGEseq_dedup
+  job_script: GAGE-seq_hic/QC_pair_file.py
+  walk_policy: complete,wowalk
+  input_pair_prefix: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-26/<walk_policy>/hPFC-scHiC_merge_lib-26
+  output_label: merge_lib-26
+  output_prefix: hPFC-scHiC_merge_lib-26
+...

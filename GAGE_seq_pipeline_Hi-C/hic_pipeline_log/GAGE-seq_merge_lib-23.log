@@ -1,0 +1,59 @@
+Job: merge pairs from the same library
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_merge_lib-23/hPFC-scHiC_merge_lib-23.merge_pair.sbatch.sh already exists, overwriting it
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/complete/hPFC-scHiC_merge_lib-23.pairs.gz already exists, overwriting it
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/wowalk/hPFC-scHiC_merge_lib-23.pairs.gz already exists, overwriting it
+        Slurm script: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_merge_lib-23/hPFC-scHiC_merge_lib-23.merge_pair.sbatch.sh
+        Input file: 
+/ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_11_lib-23/wowalk/hPFC-scHiC_24_11_lib-23.pairs.gz,/ocean/projects/bio240015p/shared/AD_project/
+hic_pipeline_results/hPFC-scHiC_24_12_lib-23/wowalk/hPFC-scHiC_24_12_lib-23.pairs.gz
+        Output file: 
+/ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/complete/hPFC-scHiC_merge_lib-23.pairs.gz,/ocean/projects/bio240015p/shared/AD_projec
+t/hic_pipeline_results/hPFC-scHiC_merge_lib-23/wowalk/hPFC-scHiC_merge_lib-23.pairs.gz
+
+Job: remove PCR duplicates from pairs
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_merge_lib-23/hPFC-scHiC_merge_lib-23.dedup_pair.sbatch.sh already exists, overwriting it
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/complete/hPFC-scHiC_merge_lib-23_nodup.pairs.gz already exists, overwriting 
+it
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/complete/hPFC-scHiC_merge_lib-23_nodup_wo1k.pairs.gz already exists, 
+overwriting it
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/wowalk/hPFC-scHiC_merge_lib-23_nodup.pairs.gz already exists, overwriting it
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/wowalk/hPFC-scHiC_merge_lib-23_nodup_wo1k.pairs.gz already exists, 
+overwriting it
+        Slurm script: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_merge_lib-23/hPFC-scHiC_merge_lib-23.dedup_pair.sbatch.sh
+        Input file: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/wowalk/hPFC-scHiC_merge_lib-23.pairs.gz
+        Output file (dedeup): 
+/ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/complete/hPFC-scHiC_merge_lib-23_nodup.pairs.gz,/ocean/projects/bio240015p/shared/AD_
+project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/wowalk/hPFC-scHiC_merge_lib-23_nodup.pairs.gz
+        Output file (dedeup wo1k): 
+/ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/complete/hPFC-scHiC_merge_lib-23_nodup_wo1k.pairs.gz,/ocean/projects/bio240015p/share
+d/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/wowalk/hPFC-scHiC_merge_lib-23_nodup_wo1k.pairs.gz
+
+Job: perform quality control check for pairs
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_merge_lib-23/hPFC-scHiC_merge_lib-23.qc_pair.sbatch.sh already exists, overwriting it
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/complete/hPFC-scHiC_merge_lib-23.qc.pair_type.tsv already exists, 
+overwriting it
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/complete/hPFC-scHiC_merge_lib-23.qc.pair_range.tsv already exists, 
+overwriting it
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/complete/hPFC-scHiC_merge_lib-23_nodup.qc.pair_type.tsv already exists, 
+overwriting it
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/complete/hPFC-scHiC_merge_lib-23_nodup.qc.pair_range.tsv already exists, 
+overwriting it
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/wowalk/hPFC-scHiC_merge_lib-23.qc.pair_type.tsv already exists, overwriting 
+it
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/wowalk/hPFC-scHiC_merge_lib-23.qc.pair_range.tsv already exists, overwriting
+it
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/wowalk/hPFC-scHiC_merge_lib-23_nodup.qc.pair_type.tsv already exists, 
+overwriting it
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/wowalk/hPFC-scHiC_merge_lib-23_nodup.qc.pair_range.tsv already exists, 
+overwriting it
+        Slurm script: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_merge_lib-23/hPFC-scHiC_merge_lib-23.qc_pair.sbatch.sh
+        Input file: 
+/ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/complete/hPFC-scHiC_merge_lib-23.pairs.gz,/ocean/projects/bio240015p/shared/AD_projec
+t/hic_pipeline_results/hPFC-scHiC_merge_lib-23/wowalk/hPFC-scHiC_merge_lib-23.pairs.gz
+        Output file (original pair): 
+/ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/complete/hPFC-scHiC_merge_lib-23,/ocean/projects/bio240015p/shared/AD_project/hic_pip
+eline_results/hPFC-scHiC_merge_lib-23/wowalk/hPFC-scHiC_merge_lib-23
+        Output file (dedeup wo1k): 
+/ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-23/complete/hPFC-scHiC_merge_lib-23_nodup,/ocean/projects/bio240015p/shared/AD_project/h
+ic_pipeline_results/hPFC-scHiC_merge_lib-23/wowalk/hPFC-scHiC_merge_lib-23_nodup
+

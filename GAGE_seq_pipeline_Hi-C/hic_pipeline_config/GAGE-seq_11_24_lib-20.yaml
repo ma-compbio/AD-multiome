@@ -1,0 +1,74 @@
+---
+# a list of parameters for the GAGE-seq Hi-C part pipeline
+global:
+  # where to save script and working folder
+  working_folder: /ocean/projects/bio240015p/shared/AD_project/
+  script_folder: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_scripts/
+  script_version: 1.0
+  out_job_script_folder: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/
+  out_result_folder: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/
+  force_overwrite: True
+  ignore_input_check: True
+# sample spefic parameters
+sample:
+  fastq_file_R1: /ocean/projects/bio240015p/shared/AD_project/data/GAGE-seq_11_2024/AN00022070/hPFC-scHiClib-20/hPFC-scHiClib-20_1.fastq.gz
+  fastq_file_R2: /ocean/projects/bio240015p/shared/AD_project/data/GAGE-seq_11_2024/AN00022070/hPFC-scHiClib-20/hPFC-scHiClib-20_2.fastq.gz
+  species: human
+  batch: 2024_11
+  out_prefix: hPFC-scHiC_24_11_lib-20
+  sample_meta: NA
+# conda environment
+conda:
+  env_name: ad_project
+# script specific parameters
+# TODO: job_md5check
+# read QC check
+job_fastqc:
+  slurm:
+    queue: RM-shared
+    time: 2-00:00:00
+    ntasks-per-node: 4
+    mem: 6Gb
+    log: log_fastqc
+    name: GAGEseq_fastqc
+  job_script: /jet/home/yzhang38/Software/FastQC/fastqc
+# demultiplex
+job_demultiplex:
+  slurm:
+    queue: RM-shared
+    time: 2-00:00:00
+    ntasks-per-node: 11
+    mem: 20Gb
+    log: log_demultiplex
+    name: GAGEseq_demultiplex
+  job_script: GAGE-seq_hic/demultiplex.py
+  adaptor_bc1: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_scripts/adaptor/adaptor_Hi-C_bc1
+  adaptor_bc2: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_scripts/adaptor/adaptor_Hi-C_bc2
+  adaptor_l1: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_scripts/adaptor/adaptor_Hi-C_l1
+  adaptor_l2: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_scripts/adaptor/adaptor_Hi-C_l2
+  barcode_keep: NA
+# align read pairs
+job_alignment:
+  slurm:
+    queue: RM
+    time: 2-00:00:00
+    ntasks-per-node: 86
+    mem: 60Gb
+    log: log_alignment
+    name: GAGEseq_alignment
+  genome_index: /ocean/projects/bio240015p/shared/AD_project/genome/bwa_hg38_index 
+# convert bam to pair
+job_bam2pair:
+  slurm:
+    queue: RM-shared
+    time: 2-00:00:00
+    ntasks-per-node: 8
+    mem: 8Gb
+    log: log_bam2pair
+    name: GAGEseq_bam2pair
+  job_script: GAGE-seq_hic/parse_bam2pair.sh
+  # TODO: check if we can integrate rescue walk script using pair_tools
+  script_rescue_walk: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_scripts/GAGE-seq_hic/rescue_walk.py 
+  walk_policy: complete,wowalk
+  genome_size: /ocean/projects/bio240015p/shared/AD_project/genome/hg38.chrom.sizes
+...
