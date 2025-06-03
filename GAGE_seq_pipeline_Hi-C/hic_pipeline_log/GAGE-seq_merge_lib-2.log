@@ -1,0 +1,38 @@
+Job: merge pairs from the same library
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_merge_lib-2/hPFC-scHiC_merge_lib-2.merge_pair.sbatch.sh 
+already exists, overwriting it
+        Slurm script: 
+/ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_merge_lib-2/hPFC-scHiC_merge_lib-2.merge_pair.sbatch.sh
+        Input file: 
+/ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_06_lib-2/wowalk/hPFC-scHiC_24_06_lib-2.pairs.gz,/ocean/
+projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_08_lib-2/wowalk/hPFC-scHiC_24_08_lib-2.pairs.gz,/ocean/project
+s/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_09_A_lib-2/wowalk/hPFC-scHiC_24_09_A_lib-2.pairs.gz,/ocean/projects/b
+io240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_09_B_lib-2/wowalk/hPFC-scHiC_24_09_B_lib-2.pairs.gz
+        Output file: 
+/ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-2/wowalk/hPFC-scHiC_merge_lib-2.pairs.gz
+
+Job: remove PCR duplicates from pairs
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_merge_lib-2/hPFC-scHiC_merge_lib-2.dedup_pair.sbatch.sh 
+already exists, overwriting it
+        Slurm script: 
+/ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_merge_lib-2/hPFC-scHiC_merge_lib-2.dedup_pair.sbatch.sh
+        Input file: 
+/ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-2/wowalk/hPFC-scHiC_merge_lib-2.pairs.gz
+        Output file (dedeup): 
+/ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-2/wowalk/hPFC-scHiC_merge_lib-2_nodup.pairs.gz
+        Output file (dedeup wo1k): 
+/ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-2/wowalk/hPFC-scHiC_merge_lib-2_nodup_wo1k.pairs
+.gz
+
+Job: perform quality control check for pairs
+Warning: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_merge_lib-2/hPFC-scHiC_merge_lib-2.qc_pair.sbatch.sh already 
+exists, overwriting it
+        Slurm script: 
+/ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_merge_lib-2/hPFC-scHiC_merge_lib-2.qc_pair.sbatch.sh
+        Input file: 
+/ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-2/wowalk//hPFC-scHiC_merge_lib-2.pairs.gz
+        Output file (original pair): 
+/ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-2/wowalk/hPFC-scHiC_merge_lib-2
+        Output file (dedeup wo1k): 
+/ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_merge_lib-2/wowalk/hPFC-scHiC_merge_lib-2_nodup
+

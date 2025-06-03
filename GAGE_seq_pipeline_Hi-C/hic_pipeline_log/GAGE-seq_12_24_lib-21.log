@@ -1,0 +1,35 @@
+
+Summary of the config file:
+Creating jobs for the following tasks:  fastqc, demultiplex, alignment, bam2pair
+
+Input fastq file:
+        R1: /ocean/projects/bio240015p/shared/AD_project/data/GAGE-seq_12_2024/AN00022632/ZD_1224_a_7/ZD_1224_a_7_1.fastq.gz
+        R2: /ocean/projects/bio240015p/shared/AD_project/data/GAGE-seq_12_2024/AN00022632/ZD_1224_a_7/ZD_1224_a_7_2.fastq.gz
+Output folder:
+        /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/
+Slurm script folder:
+        /ocean/projects/bio240015p/shared/AD_project/hic_jobs/
+
+Job: fastqc
+        Slurm script: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_24_12_lib-21/hPFC-scHiC_24_12_lib-21.fastqc.sbatch.sh
+        Output R1: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_12_lib-21/hPFC-scHiC_24_12_lib-21_FastQC_R1
+        Output R2: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_12_lib-21/hPFC-scHiC_24_12_lib-21_FastQC_R2
+
+Job: demultiplex
+Warning: mem per core is exceeded, reset it to 1.8G per core or use the RM queue
+        Slurm script: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_24_12_lib-21/hPFC-scHiC_24_12_lib-21.demultiplex.sbatch.sh
+        Output R1: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_12_lib-21/hPFC-scHiC_24_12_lib-21_demulti_R1.fastq
+        Output R2: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_12_lib-21/hPFC-scHiC_24_12_lib-21_demulti_R2.fastq
+
+Job: alignment
+        Slurm script: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_24_12_lib-21/hPFC-scHiC_24_12_lib-21.alignment.sbatch.sh
+        Input R1: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_12_lib-21/hPFC-scHiC_24_12_lib-21_demulti_R1.fastq
+        Input R2: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_12_lib-21/hPFC-scHiC_24_12_lib-21_demulti_R2.fastq
+        Output file: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_12_lib-21/hPFC-scHiC_24_12_lib-21_alignment.bam
+
+Job: parse bam aligment to pairs
+        Slurm script: /ocean/projects/bio240015p/shared/AD_project/hic_jobs/hPFC-scHiC_24_12_lib-21/hPFC-scHiC_24_12_lib-21.bam2pair.sbatch.sh
+        Input file: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_12_lib-21/hPFC-scHiC_24_12_lib-21_alignment.bam
+        Output file: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_12_lib-21/complete/hPFC-scHiC_24_12_lib-21.pairs.gz
+        Output file: /ocean/projects/bio240015p/shared/AD_project/hic_pipeline_results/hPFC-scHiC_24_12_lib-21/wowalk/hPFC-scHiC_24_12_lib-21.pairs.gz
+
