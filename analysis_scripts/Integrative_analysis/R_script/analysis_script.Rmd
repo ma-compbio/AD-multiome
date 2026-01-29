@@ -6070,6 +6070,7 @@ plot_grid(panel_distance_percent_zoom_in_diff_xiong_other_vs_other, panel_distan
 dev.off()
 ```
 
+
 ############################
 # long / short distribution - ATAC -- revision
 # In the revision, we added the peaks (cCREs) called by Liu et al as another comparison. We also added the analysis for ruochi_only_ct peak set, which use the same set of peaks (called in non-AD samples only) across AD and non-AD samples.
@@ -7799,5 +7800,2049 @@ print(panel_global_erosion_compartment_pair_short_range_heatmap)
 print(panel_global_erosion_compartment_pair_mid_range_heatmap)
 print(panel_global_erosion_compartment_pair_long_range_heatmap)
 dev.off()
+```
+
+
+############################
+# Gene expression - CTCF and cohensin complex -- revision
+# In the revision, warninge tested for differential expression of CTCF and key loop-extrusion regulators, including the cohesin complex (RAD21, STAG1/2, SMC1A/B, SMC3), cohesin maintenance factor (ESCO1/2), and the loading/unloading factors NIPBL and WAPL.
+# We used both the GAGE-seq and Mathys et al. 2023 scRNA-seq datasets.
+# Neither expression levels nor the percentage of expressing cells showed appreciable AD vs. non-AD differences.
+# We also computed a loop-extrusion gene-set activity score (excluding WAPL) using AUCell; scores were broadly comparable between AD and non-AD.
+############################
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(cowplot)
+library(ggrepel)
+library(Seurat)
+library(SeuratDisk)
+library(SeuratExtend)
+library(anndataR)
+library(umap)
+library(ggrastr)
+# load pre-computed Seurat object
+obj <- readRDS(file = "shared_xinyue/RNA/202501/AD_rna_annotated.rds")
+# load PFC427 data
+obj.pfc427 <- read_h5ad("/work/magroup/shared/4DN_project/xinyue/reference/PFC427_raw_data_select_20_projids.h5ad")
+# convert it to Seurat object
+obj.pfc427 <- to_Seurat(obj.pfc427)
+# update the metadata
+Idents(obj.pfc427) <- obj.pfc427$major_cell_type
+ad_projids <- NULL 
+ct_projids <- NULL 
+obj.pfc427$condition = ifelse(obj.pfc427$projid %in% ad_projids, "AD", 
+                              ifelse(obj.pfc427$projid %in% ct_projids, "CT", "NA"))
+obj.pfc427 <- NormalizeData(obj.pfc427, verbose = T)
+#obj.pfc427 <- ScaleData(obj.pfc427, verbose = T)
+# plot the gene expression of CTCF and cohensin complex
+gene_list = c("CTCF", "RAD21", "STAG1", "STAG2", "SMC1A", "SMC1B", "SMC3", "ESCO1", "ESCO2", "NIPBL", "WAPL")
+gene_list %in% row.names(obj)
+gene_list %in% row.names(obj.pfc427)
+gene_list_only_loading <- c("CTCF", "RAD21", "STAG1", "SMC1A", "SMC1B", "SMC3", "ESCO1", "ESCO2", "NIPBL")
+# get the average gene expression 
+data_expr_ave <- AverageExpression(
+    obj,
+    features = gene_list,
+    group.by = c("major_cell_type", "condition")
+)$RNA
+data_expr_ave <- as.data.frame(data_expr_ave)
+data_expr_ave$gene_name <- rownames(data_expr_ave)
+data_expr_ave <- data_expr_ave %>%
+  pivot_longer(cols = -gene_name, names_to = "cell_type", values_to = "gene_expr_ave") %>%
+  group_by(gene_name) 
+#
+data_expr_ave.pfc427 <- AverageExpression(
+    obj.pfc427,
+    features = gene_list,
+    group.by = c("major_cell_type", "condition")
+)$RNA
+data_expr_ave.pfc427 <- as.data.frame(data_expr_ave.pfc427)
+data_expr_ave.pfc427$gene_name <- rownames(data_expr_ave.pfc427)
+data_expr_ave.pfc427 <- data_expr_ave.pfc427 %>%
+  pivot_longer(cols = -gene_name, names_to = "cell_type", values_to = "gene_expr_ave") %>%
+  group_by(gene_name) 
+# plot the average gene expression 
+scale_this <- function(x){
+  (x - mean(x, na.rm=TRUE)) / sd(x, na.rm=TRUE)
+}
+scale_min_max <- function(x) {
+  (x - 0)/(quantile(x, 0.99) - 0)
+}
+#
+panel_ave_expr_heatmap <- data_expr_ave %>% 
+  separate_wider_delim(cols = cell_type, delim = '_', names = c("major_cell_type", "disease_group")) %>%
+  mutate(major_cell_type = factor(major_cell_type, levels = c("Exc", "Inh", "Astro", "Oligo", "OPC", "Micro", "Endo", "VLMC"))) %>%
+  group_by(gene_name) %>%
+  mutate(gene_expr_ave_scaled = scale_min_max(gene_expr_ave)) %>%
+  ggplot(aes(x = disease_group, y = gene_name, fill = gene_expr_ave_scaled)) +
+  geom_tile() +
+  xlab("") +
+  ylab("") +
+  facet_wrap(~ major_cell_type, nrow = 1) +
+  #scale_fill_gradientn(colours = c("#0571b0","white","#ca0020"), values = scales::rescale(c(-3,0,3)), guide = "colorbar", limits=c(-1,3), oob = scales::squish) +
+  scale_fill_gradientn(name = "scaled expr.", colours = c("white","#ca0020"), values = scales::rescale(c(0,0.95)), guide = "colorbar", limits=c(0,0.95), oob = scales::squish) +
+  scale_x_discrete(expand = c(0,0)) +
+  scale_y_discrete(expand = c(0,0), limits = rev) +
+  theme_cowplot() +
+  theme(strip.background = element_blank()) +
+  theme(axis.text.x = element_text(angle =90, hjust = 1, vjust = 0.5)) +
+  theme(axis.ticks.x = element_blank()) +
+  theme(axis.line = element_blank()) +
+  theme(panel.border = element_rect(linewidth = 1, color = "black"))
+panel_ave_expr_heatmap.pfc427 <- data_expr_ave.pfc427 %>%
+  separate_wider_delim(cols = cell_type, delim = '_', names = c("major_cell_type", "disease_group")) %>%
+  filter(major_cell_type %in% c("Exc", "Inh", "Ast", "Oli", "OPC", "Mic", "CAMs", "T cells", "End", "Fib", "Per", "SMC")) %>%
+  mutate(major_cell_type = factor(major_cell_type, levels = c("Exc", "Inh", "Ast", "Oli", "OPC", "Mic", "CAMs", "T cells", "End", "Fib", "Per", "SMC"))) %>%
+  group_by(gene_name) %>%
+  mutate(gene_expr_ave_scaled = scale_min_max(gene_expr_ave)) %>%
+  ggplot(aes(x = disease_group, y = gene_name, fill = gene_expr_ave_scaled)) +
+  geom_tile() +
+  xlab("") +
+  ylab("") +
+  facet_wrap(~ major_cell_type, nrow = 1) +
+  scale_fill_gradientn(name = "scaled expr.", colours = c("white","#ca0020"), values = scales::rescale(c(0,0.95)), guide = "colorbar", limits=c(0,0.95), oob = scales::squish) +
+  scale_x_discrete(expand = c(0,0)) +
+  scale_y_discrete(expand = c(0,0), limits = rev) +
+  theme_cowplot() +
+  theme(strip.background = element_blank()) +
+  theme(axis.text.x = element_text(angle =90, hjust = 1, vjust = 0.5)) +
+  theme(axis.ticks.x = element_blank()) +
+  theme(axis.line = element_blank()) +
+  theme(panel.border = element_rect(linewidth = 1, color = "black"))
+pdf(file = "R_notebook_figures/2025_revision/figure_loop_extrusion_gene_expr.GAGEseq.heatmap.pdf", width = 6, height = 4)
+print(panel_ave_expr_heatmap)
+dev.off()
+pdf(file = "R_notebook_figures/2025_revision/figure_loop_extrusion_gene_expr.PFC427.heatmap.pdf", width = 9, height = 4)
+print(panel_ave_expr_heatmap.pfc427)
+dev.off()
+# Violin plots
+obj$major_cell_type_relevel <- factor(obj$major_cell_type, c("Exc", "Inh", "Astro", "Oligo", "OPC", "Micro", "Endo", "VLMC"))
+panel_gene_set_violin <- VlnPlot2(obj, features = gene_list, group.by = "major_cell_type_relevel", split.by = "condition", pt = F, pt.size = 0.05, pt.alpha = 0.1) +
+  scale_fill_manual(name = "", values = c("AD" = "#f1a340", "CT" = "#998ec3"))
+obj.pfc427$major_cell_type_relevel <- factor(obj.pfc427$major_cell_type, levels = c("Exc", "Inh", "Ast", "Oli", "OPC", "Mic", "CAMs", "T cells", "End", "Fib", "Per", "SMC"))
+panel_gene_set_violin.pfc427 <- VlnPlot2(obj.pfc427, features = gene_list, group.by = "major_cell_type_relevel", split.by = "condition", pt = F, pt.size = 0.05, pt.alpha = 0.1) +
+  scale_fill_manual(name = "", values = c("AD" = "#f1a340", "CT" = "#998ec3"))
+# Dot plots
+group_levels <- levels(factor(obj@meta.data[["major_cell_type_relevel"]]))
+#
+scale_cont_auto <- function(
+    color_scheme,
+    type = c("fill", "color"),
+    center_color = NULL,
+    value_range = NULL
+) {
+  type <- match.arg(type)
+  if (is.null(color_scheme)) return(NULL)
+  library(ggplot2)
+  library("viridis")
+
+  scale_func <- if(type == "fill") {
+    list(
+      viridis = scale_fill_viridis,
+      gradient2 = scale_fill_gradient2,
+      gradient = scale_fill_gradient,
+      gradientn = scale_fill_gradientn
+    )
+  } else {
+    list(
+      viridis = scale_color_viridis,
+      gradient2 = scale_color_gradient2,
+      gradient = scale_color_gradient,
+      gradientn = scale_color_gradientn
+    )
+  }
+
+  if (any(color_scheme %in% LETTERS[1:8])) {
+    return(scale_func$viridis(option = color_scheme))
+  }
+
+  if (!is.na(color_scheme["mid"])) {
+    return(scale_func$gradient2(low = color_scheme["low"],
+                                mid = color_scheme["mid"],
+                                high = color_scheme["high"]))
+  }
+
+  if (all(!is.na(color_scheme[c("low","high")]))) {
+    return(scale_func$gradient(low = color_scheme["low"],
+                               high = color_scheme["high"]))
+  }
+
+  result <- handle_color_scheme(color_scheme)
+
+  if (is.null(center_color)) {
+    center_color <- result$is_diverging
+  }
+
+  default_colors <- if(type == "fill") {
+    rev(brewer.pal(11,"RdBu"))
+  } else {
+    brewer.pal(9,"Blues")
+  }
+
+  create_scale <- function(scale_type, colors, limits = NULL) {
+    args <- list(colors = colors)
+    if (!is.null(limits)) {
+      args$limits <- limits
+    }
+    do.call(scale_func[[scale_type]], args)
+  }
+
+  if (center_color && !is.null(value_range)) {
+    max_abs_value <- max(abs(value_range))
+    limits <- c(-max_abs_value, max_abs_value)
+  } else {
+    limits <- NULL
+  }
+
+  switch(result$type,
+         "brewer" = create_scale("gradientn", result$colors, limits),
+         "default" = create_scale("gradientn", default_colors, limits),
+         "custom" = create_scale("gradientn", result$colors, limits),
+         "single" = create_scale("gradient", c("white", result$colors), limits)
+  )
+}
+scale_fill_cont_auto <- function(color_scheme, center_color = NULL, value_range = NULL) {
+  scale_cont_auto(
+    color_scheme,
+    type = "fill",
+    center_color = center_color,
+    value_range = value_range)
+}
+scale_color_cont_auto <- function(color_scheme, center_color = NULL, value_range = NULL) {
+  scale_cont_auto(
+    color_scheme,
+    type = "color",
+    center_color = center_color,
+    value_range = value_range)
+}
+scale_disc_auto <- function(color_scheme, n, type = c("color", "fill"), labels = waiver()) {
+  type <- match.arg(type)
+  if(is.null(color_scheme)) return(NULL)
+  library(ggplot2)
+  library(RColorBrewer)
+
+  scale_func <- if(type == "color") {
+    list(
+      manual = scale_color_manual,
+      brewer = scale_color_brewer
+    )
+  } else {
+    list(
+      manual = scale_fill_manual,
+      brewer = scale_fill_brewer
+    )
+  }
+
+  pro_theme <- names(presets_color_pro)
+  iwh_theme <- names(presets_color_iwh)
+
+  if(length(color_scheme) == 1 & n <= 80) {
+    if(color_scheme %in% c("default","light","bright",paste0("pro_",pro_theme))) {
+      color_scheme <- sub("pro_","",color_scheme)
+      if(n == 1 && color_scheme == "light" && type == "fill") return(NULL)
+      cols <- color_pro(n, col.space = color_scheme)
+      cols <- scale_func$manual(values = cols, labels = if(type == "color") labels else waiver())
+    } else if(color_scheme %in% paste0("iwh_",iwh_theme)) {
+      color_scheme <- sub("iwh_","",color_scheme)
+      cols <- color_iwh(n, col.space = color_scheme)
+      cols <- scale_func$manual(values = cols, labels = if(type == "color") labels else waiver())
+    } else if(color_scheme %in% rownames(brewer.pal.info)) {
+      return(scale_func$brewer(palette = color_scheme, labels = if(type == "color") labels else waiver()))
+    } else {
+      # Handle single color or non-standard color name
+      return(scale_func$manual(values = c(color_scheme), labels = if(type == "color") labels else waiver()))
+    }
+  } else {
+    cols <- scale_func$manual(values = color_scheme, labels = if(type == "color") labels else waiver())
+  }
+  return(cols)
+}
+
+scale_color_disc_auto <- function(color_scheme, n, labels = waiver()) {
+  scale_disc_auto(color_scheme, n, type = "color", labels = labels)
+}
+#
+DotPlot3 <- function (seu, features, group.by = NULL, split.by = NULL, split.by.method = "border", 
+    nudge_factor = 0.35, color_scheme = "A", split.by.colors = "default", 
+    center_color = NULL, angle = NULL, hjust = NULL, vjust = NULL, 
+    legend_position = "right", plot.margin = margin(t = 5.5, 
+        r = 5.5, b = 5.5, l = 5.5), panel.spacing = unit(5, "pt"), 
+    strip.placement = "outside", border = TRUE, border.width = 0.6, 
+    flip = FALSE, free_space = TRUE, show_grid = TRUE, ...) 
+{
+    library(ggplot2)
+    library(reshape2)
+    library(dplyr)
+    if (is.list(features)) {
+        feature_groups <- unlist(lapply(names(features), function(group) {
+            rep(group, length(features[[group]]))
+        }))
+        tp <- unlist(features)
+    }
+    else {
+        tp <- features
+        feature_groups <- NULL
+    }
+    if (is.null(group.by)) {
+        groups <- Idents(seu)
+        group_levels <- levels(groups)
+    }
+    else {
+        group_levels <- levels(factor(seu@meta.data[[group.by]]))
+    }
+    cat(paste0("Levels are: ", group_levels, '\n'))
+    if (!is.null(split.by)) {
+        split_levels <- levels(factor(seu@meta.data[[split.by]]))
+        if (is.null(group.by)) {
+            group_values <- as.character(Idents(seu))
+        }
+        else {
+            group_values <- seu@meta.data[[group.by]]
+        }
+        combined_group <- paste(group_values, seu@meta.data[[split.by]], 
+            sep = "___")
+        seu[["__internal_combined_group__"]] <- combined_group
+        calc_group.by <- "__internal_combined_group__"
+    }
+    else {
+        calc_group.by <- group.by
+    }
+    pct <- feature_percent(seu, tp, group.by = calc_group.by)
+    pct.m <- melt(pct, value.name = "pct")
+    z <- CalcStats(seu, tp, group.by = calc_group.by) %>% as.matrix %>% 
+        melt(value.name = "zscore")
+    ToPlot <- inner_join(pct.m, z, by = c("Var1", "Var2"))
+    if (!is.null(split.by)) {
+        ToPlot <- ToPlot %>% tidyr::separate(Var2, c("group", 
+            "split"), sep = "___")
+        ToPlot$group <- factor(ToPlot$group, levels = group_levels)
+        ToPlot$split <- factor(ToPlot$split, levels = split_levels)
+        n_splits <- length(split_levels)
+        nudge_values <- seq(-nudge_factor/2, nudge_factor/2, 
+            length.out = n_splits)
+        ToPlot$nudge <- nudge_values[ToPlot$split]
+    }
+    else {
+        ToPlot$group <- ToPlot$Var2
+        ToPlot$split <- NA
+        ToPlot$nudge <- 0
+    }
+    if (!is.null(feature_groups)) {
+        ToPlot$FeatureGroup <- rep(feature_groups, times = ncol(pct))
+        ToPlot$FeatureGroup <- factor(ToPlot$FeatureGroup, levels = unique(ToPlot$FeatureGroup))
+    }
+    if (flip) {
+        ToPlot$group <- factor(ToPlot$group, levels = rev(unique(group_levels)))
+        ToPlot$Var1 <- factor(ToPlot$Var1, levels = unique(ToPlot$Var1))
+    }
+    else {
+        ToPlot$group <- factor(ToPlot$group, levels = unique(group_levels))
+        ToPlot$Var1 <- factor(ToPlot$Var1, levels = rev(unique(ToPlot$Var1)))
+    }
+    value_range <- range(ToPlot$zscore)
+    if (is.null(angle)) {
+        if (flip) {
+            max_label_length <- max(nchar(levels(ToPlot$Var1)))
+        }
+        else {
+            max_label_length <- max(nchar(levels(ToPlot$group)))
+        }
+        angle <- if (max_label_length <= 2) 
+            0
+        else 45
+    }
+    if (abs(angle) > 90) {
+        warning("Angle should be between -90 and 90 degrees for optimal readability.")
+    }
+    if (is.null(hjust)) {
+        if (angle > 0) {
+            hjust <- 1
+        }
+        else if (angle < 0) {
+            hjust <- 0
+        }
+        else {
+            hjust <- 0.5
+        }
+    }
+    if (is.null(vjust)) {
+        if (abs(angle) == 90) {
+            vjust <- 0.5
+        }
+        else {
+            vjust <- 1
+        }
+    }
+    cat(paste0("Levels ", levels(ToPlot$group)), '\n')
+    if (!is.null(split.by)) {
+        if (split.by.method == "border") {
+            p <- ggplot(ToPlot, aes(x = group, y = Var1, size = pct, 
+                fill = zscore, color = split)) + geom_point(shape = 21, 
+                stroke = border.width, position = position_nudge(x = ToPlot$nudge))
+            color_scale <- scale_fill_cont_auto(color_scheme, 
+                center_color = center_color, value_range = value_range)
+            split_scale <- scale_color_disc_auto(split.by.colors, 
+                n_splits)
+            color_lab <- "zscore"
+        }
+        else if (split.by.method == "color") {
+            p <- ggplot(ToPlot, aes(x = group, y = Var1, size = pct, 
+                color = split, alpha = zscore)) + geom_point(position = position_nudge(x = ToPlot$nudge))
+            color_scale <- scale_color_disc_auto(split.by.colors, 
+                n_splits)
+            alpha_scale <- scale_alpha(range = c(0.1, 1))
+            color_lab <- split.by
+        }
+    }
+    else {
+        if (border) {
+            p <- ggplot(ToPlot, aes(x = group, y = Var1, size = pct, 
+                fill = zscore)) + geom_point(shape = 21, color = "black", 
+                stroke = border.width)
+            color_scale <- scale_fill_cont_auto(color_scheme, 
+                center_color = center_color, value_range = value_range)
+            color_lab <- "zscore"
+        }
+        else {
+            p <- ggplot(ToPlot, aes(x = group, y = Var1, size = pct, 
+                color = zscore)) + geom_point()
+            color_scale <- scale_color_cont_auto(color_scheme, 
+                center_color = center_color, value_range = value_range)
+            color_lab <- "zscore"
+        }
+    }
+    p <- p + theme_bw() + theme(axis.title = element_blank(), 
+        axis.text.x = element_text(angle = angle, hjust = hjust, 
+            vjust = vjust), strip.background = element_rect(fill = NA, 
+            size = 0), panel.spacing = panel.spacing, strip.placement = strip.placement, 
+        legend.position = legend_position) + labs(size = "Percent\nexpressed", 
+        color = color_lab, fill = color_lab) + theme(...) + color_scale
+    if (!is.null(split.by) && split.by.method == "border") {
+        p <- p + labs(color = split.by) + split_scale
+    }
+    if (!is.null(feature_groups)) {
+        facet_scales <- ifelse(flip, "free_x", "free_y")
+        facet_space <- ifelse(free_space, "free", "fixed")
+        if (flip) {
+            p <- p + facet_grid(cols = vars(FeatureGroup), scales = facet_scales, 
+                space = facet_space)
+        }
+        else {
+            p <- p + facet_grid(rows = vars(FeatureGroup), scales = facet_scales, 
+                space = facet_space)
+        }
+    }
+    if (!show_grid) {
+        p <- p + theme(panel.grid = element_blank())
+    }
+    if (flip) {
+        p <- p + coord_flip()
+    }
+    return(p)
+}
+#
+panel_gene_set_dot_plot <- DotPlot3(obj, 
+                                    features = gene_list, 
+                                    group.by = "major_cell_type_relevel", 
+                                    split.by = "condition", 
+                                    #split.by.method = "annotation", 
+                                    split.by.colors = c("black", "grey"),
+                                    show_grid = T) +
+  scale_fill_gradientn(name = "zscore", colours = c("#0571b0", "white","#ca0020"), values = scales::rescale(c(-2,0,3)), guide = "colorbar", limits=c(-2,3), oob = scales::squish)
+panel_gene_set_dot_plot.pfc427 <- DotPlot2(obj.pfc427, 
+                                           features = gene_list, 
+                                           group.by = "major_cell_type_relevel", 
+                                           split.by = "condition", 
+                                           #split.by.method = "color", 
+                                           split.by.colors = c("black", "grey"),
+                                           show_grid = T) +
+  scale_fill_gradientn(name = "zscore", colours = c("#0571b0", "white","#ca0020"), values = scales::rescale(c(-2,0,3)), guide = "colorbar", limits=c(-2,3), oob = scales::squish)
+pdf(file = "R_notebook_figures/2025_revision/figure_loop_extrusion_gene_expr.GAGEseq.dotplot.pdf", width = 6, height = 3)
+print(panel_gene_set_dot_plot)
+dev.off()
+pdf(file = "R_notebook_figures/2025_revision/figure_loop_extrusion_gene_expr.PFC427.dotplot.pdf", width = 8, height = 3)
+print(panel_gene_set_dot_plot.pfc427)
+dev.off()
+#####################
+# Gene set analysis
+# calculate gene set score
+obj <- GeneSetAnalysis(obj, genesets = gene_list_only_loading)
+obj.pfc427 <- GeneSetAnalysis(obj.pfc427, genesets = gene_list_only_loading)
+# extract matrix - GAGE-seq
+matrix_gene_set_obj <- obj@misc$AUCell$genesets
+data_gene_set_obj <- data.frame(cell_id = colnames(matrix_gene_set_obj), score = matrix_gene_set_obj[1, ], major_cell_type = obj$major_cell_type, condition = obj$condition)
+# extract matrix - PFC427 
+matrix_gene_set_obj.pfc427 <- obj.pfc427@misc$AUCell$genesets
+data_gene_set_obj.pfc427 <- data.frame(cell_id = colnames(matrix_gene_set_obj.pfc427), score = matrix_gene_set_obj.pfc427[1, ], major_cell_type = obj.pfc427$major_cell_type, condition = obj.pfc427$condition)
+# calculate the wilcoxn test
+# save the results
+write.table(data_gene_set_obj, "R_notebook_figures/2025_revision/figure_loop_extrusion_gene_expr.GAGEseq.violin.tsv", row.names = T, col.names = F, quote = F, sep = '\t')
+write.table(data_gene_set_obj.pfc427, "R_notebook_figures/2025_revision/figure_loop_extrusion_gene_expr.PFC427.violin.tsv", row.names = T, col.names = F, quote = F, sep = '\t')
+test_boxplot_geneset_score <- function(input) {
+  result_df = data.frame()
+  for (cell_type in unique(input$major_cell_type)) {
+    AD_cell <- subset(input, major_cell_type == cell_type & condition == "AD")[, 'score']
+    CT_cell <- subset(input, major_cell_type == cell_type & condition == "CT")[, 'score']
+    if (length(AD_cell) > 1 & length(CT_cell) > 1) {
+      result_test = wilcox.test(AD_cell, CT_cell)
+      tmp <- data.frame(major_cell_type = cell_type, p_value = result_test$p.value, AD_cell_count = length(AD_cell), CT_cell_count = length(CT_cell))
+      result_df <- rbind(result_df, tmp)
+    } else {
+      cat(paste0("Cell number is zero for ", cell_type, '\n'))
+    }
+  }
+  return(result_df)
+}
+# save the new seurate object
+saveRDS(obj, file = "results/202507/loop_extrusion/GAGEseq_processed.rds", compress = FALSE)
+saveRDS(obj.pfc427, file = "results/202507/loop_extrusion/PFC427_processed.rds", compress = FALSE)
+# plotting 
+test_gene_set <- test_boxplot_geneset_score(data_gene_set_obj)
+data_gene_set_obj %>%
+  group_by(major_cell_type, condition) %>%
+  summarise(mean(score))
+panel_gene_set_score <- data_gene_set_obj %>%
+  filter(!is.na(score)) %>%
+  filter(!is.infinite(score)) %>%
+  mutate(major_cell_type = factor(major_cell_type, levels = c("Exc", "Inh", "Astro", "Oligo", "OPC", "Micro", "Endo", "VLMC"))) %>%
+  ggplot(aes(x = major_cell_type, y = score, fill = major_cell_type, alpha = condition)) +
+  geom_violin(position = position_dodge(width = 0.7), width = 0.7, scale = "width") +
+  geom_boxplot(position = position_dodge(width = 0.7), width = 0.1, outlier.shape = NA, fill = "white", color = "black") +
+  xlab("") +
+  ylab("Geneset score") +
+  #scale_y_continuous(expand = c(0,0)) +
+  scale_fill_manual(name = "", values = c("Exc" = "#30952c", "Inh" = "#a9da82", "Astro" = "#dd2124", "Oligo" = "#fe9b42", "OPC" = "#a7502a", "Micro" = "#c3a9cf", "Endo" = "#a6cee3", "VLMC" = "#1f78b4")) +
+  theme_cowplot()
+#
+test_gene_set.pfc427 <- test_boxplot_geneset_score(data_gene_set_obj.pfc427)
+panel_gene_set_score.pfc27 <- data_gene_set_obj.pfc427 %>%
+  filter(!is.na(score)) %>%
+  filter(!is.infinite(score)) %>%
+  filter(major_cell_type %in% c("Exc", "Inh", "Ast", "Oli", "OPC", "Mic", "CAMs", "T cells", "End", "Fib", "Per", "SMC")) %>%
+  mutate(major_cell_type = factor(major_cell_type, levels = c("Exc", "Inh", "Ast", "Oli", "OPC", "Mic", "CAMs", "T cells", "End", "Fib", "Per", "SMC"))) %>%
+  ggplot(aes(x = major_cell_type, y = score, fill = major_cell_type, alpha = condition)) +
+  geom_violin(position = position_dodge(width = 0.7), width = 0.7, scale = "width") +
+  geom_boxplot(position = position_dodge(width = 0.7), width = 0.1, outlier.shape = NA, fill = "white", color = "black") +
+  xlab("") +
+  ylab("Geneset score") +
+  #scale_y_continuous(expand = c(0,0)) +
+  scale_fill_manual(name = "", values = c("Exc" = "#33a02c", "Inh" = "#a9da82", "Ast" = "#e31a1c", "Oli" = "#ff7f00", "OPC" = "#a7502a", "Mic" = "#6a3d9a", "CAMs" = "#cab2d6", "T cells" = "#cab2d6", "End" = "deeppink", "Fib" = "gold", "Per" = "khaki1",  "SMC" = "khaki1")) +
+  theme_cowplot()
+pdf(file = "R_notebook_figures/2025_revision/figure_loop_extrusion_gene_expr.GAGEseq.violin.pdf", width = 6, height = 3)
+print(panel_gene_set_score)
+dev.off()
+pdf(file = "R_notebook_figures/2025_revision/figure_loop_extrusion_gene_expr.PFC427.violin.pdf", width = 8, height = 3)
+print(panel_gene_set_score.pfc27)
+dev.off()
+```
+
+
+############################
+# CTCF ChIP-seq -- revision
+# To further examine the changes of CTCF binding in AD brains, we re-analyzed the published CTCF ChIP-seq data from Rush Alzheimer's Disease Center (Rush-ENCODE project).
+# Using 59 PFC CTCF ChIP-seq dataset from Rush/ENCODE, we observed little change in the number of peaks or the fraction of peaks containing CTCF motifs. Differential binding analysis (DiffBind + edgeR) between AD (AD + AD&CI) and non-AD (NCI) also identified no significantly differential peaks in binding intensity.
+############################
+```{r}
+library(ggplot2)
+library(cowplot)
+library(dplyr)
+library(tidyr)
+library(edgeR)
+library(ggrastr)
+###################
+# load sample meta table
+###################
+anno_ctcf <- read.table(file = "data/Rush_ENCODE/CTCF_meta.tsv", header = T, sep = '\t', stringsAsFactors = F)
+###################
+# load data 
+###################
+# load CTCF motif annotation
+data_ctcf <- read.table(file = "data/Rush_ENCODE/CTCF_anno/CTCF_recalibrated.final.motif_occurence.tsv", header = T, sep = '\t', stringsAsFactors = F)
+# load signal summary
+data_signal <- read.table(file = "data/Rush_ENCODE/CTCF_anno/CTCF_recalibrated.final.signal.filtered.tsv", header = T, sep = '\t', stringsAsFactors = F)
+# load signal differnetial 
+data_signal_diff <- read.table(file = "data/Rush_ENCODE/CTCF_anno/CTCF_recalibrated.final.signal.diff.tsv", header = T, sep = '\t', stringsAsFactors = F)
+data_signal_diff <- merge(data_signal_diff, data_ctcf[, c("chrom", "start", "end", "group", "sample_count", "motif_count", "closest_motif_idx", "closest_motif_score", "closest_motif_age", "closest_distance")], by = c("chrom", "start", "end"), sort = F)
+# load read count at peak region
+data_peak_count <- read.table(file = "data/Rush_ENCODE/CTCF_anno/peak_read_count_summary.with_header.tsv", header = T, sep = '\t', stringsAsFactors = F)
+data_peak_sample <- read.table(file = "data/Rush_ENCODE/CTCF_DiffBind_sample.tsv", header = T, sep = '\t', stringsAsFactors = F)
+data_samples <- data_peak_sample[, c("SampleID", "Condition")]
+data_samples$Condition <- factor(data_samples$Condition, levels = c("non_AD", "AD"))
+data_counts <- data_peak_count[, 4:ncol(data_peak_count)]
+data_peaks <- data_peak_count[, 1:3]
+# create DE object
+object_diffbind <- DGEList(counts = data_counts, samples = data_samples, genes = data_peaks)
+# FRIP analysis
+data_frip_all <- read.table(file = "data/Rush_ENCODE/CTCF_anno/CTCF_bulk_FRIP.all_peak.tsv", header = T, sep = '\t', stringsAsFactors = F)
+data_frip_sample <- read.table(file = "data/Rush_ENCODE/CTCF_anno/CTCF_bulk_FRIP.sample_peak.tsv", header = T, sep = '\t')
+data_frip_all <- merge(data_frip_all, unique(anno_ctcf[, c("sample_id", "age_group", "gender", "disease_group")]), by.x = "SampleID", by.y = "sample_id", sort = F)
+data_frip_sample <- merge(data_frip_sample, unique(anno_ctcf[, c("sample_id", "age_group", "gender", "disease_group")]), by.x = "SampleID", by.y = "sample_id", sort = F)
+####################
+# FRIP analysis
+####################
+data_frip_all %>%
+  mutate(disease_group = factor(disease_group, levels = paste0("Cogdx_", seq(5)))) %>%
+  mutate(disease_group = ifelse(disease_group == "Cogdx_1", "non-AD", "AD")) %>%
+  mutate(disease_group = factor(disease_group, levels = c("non-AD", "AD"))) %>%
+  ggplot(aes(x = disease_group, y = FRiP)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(height = 0, width = 0.3) +
+  xlab("") +
+  ylab("FRiP") +
+  theme_cowplot()
+####################
+# DiffBind analysis
+####################
+# Keep peaks with at least 1 read in ≥3 samples (same as DiffBind default)
+keep <- filterByExpr(object_diffbind, group = data_samples$Condition, min.count = 1, min.total.count = 5)
+object_diffbind <- object_diffbind[keep, , keep.lib.sizes = FALSE]
+# TMM normalization (exactly what DiffBind uses)
+object_diffbind <- calcNormFactors(object_diffbind, method = "TMM")
+# Design matrix
+design <- model.matrix(~ Condition, data = data_samples)
+# Dispersion estimation
+object_diffbind <- estimateDisp(object_diffbind, design, robust = TRUE)
+# Fit GLM
+fit <- glmQLFit(object_diffbind, design, robust = TRUE)
+# Test Disease vs Control
+qlf <- glmQLFTest(fit, coef = "ConditionAD")
+#
+res <- topTags(qlf, n = Inf)$table %>%
+  arrange(FDR)
+# plot volcano plot
+panel_diffbind <- res %>%
+  ggplot(aes(x = logFC, y = -log10(FDR))) +
+  rasterise(geom_point(size = 0.5, alpha = 0.1), dpi = 600) + 
+  geom_vline(xintercept = 0, linetype = 1) +
+  geom_hline(yintercept = -log10(0.05), linetype = 2, color = "red") +
+  xlab("logFC") +
+  ylab("-log10(FDR)") +
+  coord_cartesian(xlim = c(-4,4), ylim = c(0, 4)) +
+  theme_cowplot()
+pdf(file = "R_notebook_figures/2025_revision/figure_CTCF_ChIP_seq_peak_diffbind.pdf", width = 5, height = 4)
+print(panel_diffbind)
+dev.off()
+
+###################
+# analysis - recalibration check
+###################
+# sample count disbution for recalicated CTCF peak
+panel_ctcf_count_distr <- data_ctcf %>%
+  ggplot(aes(x = sample_count, fill = group)) +
+  geom_histogram(binwidth = 1, color = "black") +
+  geom_hline(yintercept = 0.0, color = "black") +
+  xlab("Number of sample with peak") +
+  ylab("Peak Count") +
+  ggtitle("Number of peak by occurence in sample") +
+  facet_wrap(~ group, ncol = 1) +
+  scale_y_continuous(expand = c(0,0)) +
+  scale_fill_manual(name = "", values = c("original" = "#8da0cb", "recalibrated" = "#fc8d62")) +
+  theme_cowplot() + 
+  theme(strip.background = element_blank()) +
+  theme(strip.text.x = element_text(face = "bold")) +
+  theme(axis.line.x = element_blank()) +
+  theme(legend.position = "none")
+# percent of peak overlapping with CTCF motif
+panel_ctcf_motif_fraction <- data_ctcf %>%
+  mutate(overlap_motif = ifelse(motif_count > 0, 'CTCF', 'no_CTCF')) %>%
+  mutate(overlap_motif = factor(overlap_motif, levels = rev(c("CTCF", "no_CTCF")))) %>%
+  group_by(group, sample_count, overlap_motif) %>%
+  summarise(count = n()) %>%
+  group_by(group, sample_count) %>%
+  mutate(total = sum(count)) %>%
+  filter(overlap_motif == "CTCF") %>%
+  ggplot(aes(x = sample_count, y = count/total, fill = overlap_motif)) +
+  geom_col(col = "black") +
+  geom_hline(yintercept = 0.0, color = "black") +
+  xlab("Number of sample with peak") +
+  ylab("Fractino of peak with CTCF motif") +
+  ggtitle("Fraction of peak overlapping with CTCF motif") +
+  facet_wrap(~ group, ncol = 1) +
+  #scale_fill_manual(name = "", values = c("original" = "#8da0cb", "recalibrated" = "#fc8d62")) +
+  scale_y_continuous(expand = c(0,0), labels = scales::percent) +
+  theme_cowplot() +
+  theme(strip.background = element_blank()) +
+  theme(strip.text.x = element_text(face = "bold")) +
+  theme(legend.position = "none")
+# motif score
+panel_ctcf_motif_score <- data_ctcf %>%
+  ggplot(aes(x = factor(sample_count), y = closest_motif_score, fill = group)) +
+  #geom_violin(position = position_dodge()) +
+  geom_boxplot(outlier.shape = NA, width = 0.6, position = position_dodge()) +
+  #geom_hline(yintercept = 11.0, color = "black") +
+  xlab("Number of sample with peak") +
+  ylab("CTCF motif score") +
+  ggtitle("Motif score trend") +
+  facet_wrap(~ group, ncol = 1) +
+  scale_fill_manual(name = "", values = c("original" = "#8da0cb", "recalibrated" = "#fc8d62")) +
+  theme_cowplot() +
+  theme(strip.background = element_blank()) +
+  theme(strip.text.x = element_text(face = "bold")) +
+  theme(axis.text.x = element_blank()) +
+  theme(legend.position = "none") +
+  annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf)
+plot_grid(panel_ctcf_count_distr, panel_ctcf_motif_fraction, panel_ctcf_motif_score, ncol = 1, align = 'v', axis = 'lr')
+# exploration the disease group 
+data_ctcf_sample <- data_ctcf %>%
+  pivot_longer(cols = starts_with("ENCFF"), names_to = "file_accession", values_to = "peak_sign") %>%
+  filter(peak_sign != 0)
+data_ctcf_sample <- merge(data_ctcf_sample, unique(anno_ctcf[, c("file_accession", "sample_id", "age_group", "gender", "disease_group")]), by =  "file_accession", sort = F)
+# exploration of the signal
+data_signal <- merge(data_signal, unique(anno_ctcf[, c("sample_id", "age_group", "gender", "disease_group")]), by = "sample_id")
+###################
+# making plots
+###################
+# number of peak
+panel_peak_count_by_disease_group <- data_ctcf_sample %>%
+  group_by(disease_group, sample_id, gender) %>%
+  summarise(count = n()) %>%
+  mutate(disease_group = factor(disease_group, levels = paste0("Cogdx_", seq(5)))) %>%
+  ggplot(aes(x = disease_group, y = count)) +
+  geom_boxplot(outlier.shape = NA, width = 0.5) +
+  geom_jitter(height = 0, width = 0.15, size = 2, pch = 21, fill = "darkgrey", color = "black", alpha = 0.5) +
+  xlab("") +
+  ylab("Peak count") +
+  ggtitle("Number of peak for each sample") +
+  scale_color_distiller(palette = "Spectral") +
+  theme_cowplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+# fraction of peak with CTCF
+panel_ctcf_count_by_disease_group <- data_ctcf_sample %>%
+  mutate(overlap_motif = ifelse(motif_count > 0, 'CTCF', 'no_CTCF')) %>%
+  group_by(disease_group, sample_id, gender, overlap_motif) %>%
+  summarise(count = n()) %>%
+  group_by(disease_group, sample_id) %>%
+  mutate(total = sum(count)) %>%
+  mutate(disease_group = factor(disease_group, levels = paste0("Cogdx_", seq(5)))) %>%
+  filter(overlap_motif == "CTCF") %>%
+  ggplot(aes(x = disease_group, y = count/total)) +
+  geom_boxplot(outlier.shape = NA, width = 0.5) +
+  geom_jitter(height = 0, width = 0.15, size = 2, pch = 21, fill = "darkgrey", color = "black", alpha = 0.5) +
+  xlab("") +
+  ylab("Fraction of peak with CTCF") +
+  scale_y_continuous(labels = scales::percent) +
+  theme_cowplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+pdf(file = "R_notebook_figures/2025_revision/figure_CTCF_ChIP_seq_peak_count.pdf", width = 8, height = 4)
+plot_grid(panel_peak_count_by_disease_group, panel_ctcf_count_by_disease_group, nrow = 1, align = 'h', axis = 'tb')
+dev.off()
+```
+
+
+############################
+# CTCF motifs' snATAC-seq signal -- revsion 
+# Because ChIP-seq data from Rush/ENCODE are bulk tissue data, we next examined single-nucleus ATAC-seq (snATAC-seq) data from Xiong et al to investigate CTCF binding changes at cell-type resolution. 
+# We compared the signals at CTCF motifs between AD and non-AD.
+############################
+```{r}
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+# load sample meta
+data_sample_meta <- read.table(file = "annotation/sample_info.v2.tsv", header = T, sep = '\t', stringsAsFactors = F)
+# load snATAC-seq cell meta
+data_atac_cell_meta_TSS6 <- read.table(file = "/work/magroup/shared/4DN_project/ad/result_atac/snATAC_meta_TSS_6.tsv", header = T, sep = '\t', stringsAsFactors = F, comment.char = "")
+data_atac_cell_meta_TSS1 <- read.table(file = "/work/magroup/shared/4DN_project/ad/result_atac/snATAC_meta_TSS_1.tsv", header = T, sep = '\t', stringsAsFactors = F, comment.char = "")
+# sample list
+sample_list = data_sample_meta$library_id
+data_atac_cell_meta_TSS6_filter <- data_atac_cell_meta_TSS6 %>%
+  separate_wider_delim(cellId, delim = '#', names = c("Sample", "CellID"), cols_remove = F) %>%
+  filter(Sample %in% sample_list)
+data_atac_cell_meta_TSS1_filter <- data_atac_cell_meta_TSS1 %>%
+  separate_wider_delim(cellId, delim = '#', names = c("Sample", "CellID"), cols_remove = F) %>%
+  filter(Sample %in% sample_list)
+# cell-wise FRiP
+data_atac_cell_meta_TSS6_filter <- merge(data_atac_cell_meta_TSS6_filter, data_sample_meta[, c("library_id", "projid", "gender", "disease_group")], by.x = "Sample", by.y = "library_id", sort = F)
+data_atac_cell_meta_TSS1_filter <- merge(data_atac_cell_meta_TSS1_filter, data_sample_meta[, c("library_id", "projid", "gender", "disease_group")], by.x = "Sample", by.y = "library_id", sort = F)
+# sanity check if TSS > 6 match TSS > 1
+tmp <- data_atac_cell_meta_TSS6 %>%
+  filter(!cellId %in% data_atac_cell_meta_TSS1$cellId) 
+# load the CTCF-anchored FRiP 
+data_ctcf_frip <- data.frame()
+#for (filename in list.files("results/202507/ATAC_FRiP/")) {
+for (filename in list.files("results/202507/ATAC_FRiP.300bp/")) {
+  if (grepl(".*txt", filename)) {
+    tmp_data <- read.table(paste0("results/202507/ATAC_FRiP.300bp/", filename), sep = '\t', header = T, stringsAsFactors = F)
+    data_ctcf_frip <- rbind(data_ctcf_frip, tmp_data)
+    cat(paste0("load ", filename, '\n'))
+  }
+}
+#
+data_ctcf_frip <- data_ctcf_frip %>%
+  mutate(cellId = paste0(sample_id, '#', cell_id)) %>%
+  mutate(CTCF_FRIP = FRiP)
+# 
+data_atac_ctcf_TSS6 <- merge(data_atac_cell_meta_TSS6_filter, data_ctcf_frip[, c("cellId", "CTCF_FRIP")], by = "cellId", all.x = T, sort = F)
+data_atac_ctcf_TSS1 <- merge(data_atac_cell_meta_TSS1_filter, data_ctcf_frip[, c("cellId", "CTCF_FRIP")], by = "cellId", all.x = T, sort = F)
+# load ATAC-seq signal at intergenic regions 
+data_atac_intergenic <- read.table(file = "results/202507/ATAC_intergenic_signal/ATAC_intergenic_1kb_xiong_signal_sum.tsv", sep = '\t', header = T, stringsAsFactors = F, comment.char = "")
+colnames(data_atac_intergenic)[1] <- "chrom"
+# load bigwig signal at CTCF motif
+data_ctcf_signal <- data.frame()
+for (cell_type in c("Astro", "Exc", "Inh", "Micro", "Oligo", "OPC", "Endo", "VLMC")) {
+  tmp_data <- read.table(paste0("results/202507/ATAC_CTCF_motif_signal/ATAC_CTCF_motif_50bp_signal_sum.", cell_type, ".tsv"), sep = '\t', header = T, stringsAsFactors = F, comment.char = "")
+  colnames(tmp_data) <- c("chrom", "start", "end", "TSS1_lateAD", "TSS1_nonAD", "TSS6_lateAD", "TSS6_nonAD", "CTCF_peak", "ATAC_peak")
+  tmp_data$cell_type <- cell_type
+  data_ctcf_signal <- rbind(data_ctcf_signal, tmp_data)
+}
+###################
+# plot the ATAC-seq signal at CTCF motif
+###################
+data_ctcf_signal_processed <- data_ctcf_signal %>%
+  mutate(cell_type  = factor(cell_type, levels = c("Exc", "Inh", "Astro", "Micro", "Oligo", "OPC", "Endo", "VLMC"))) %>%
+  filter(cell_type %in% c("Astro", "Exc", "Inh", "Micro", "Oligo", "OPC")) %>%
+  mutate(motif_category = ifelse(CTCF_peak > 0 & ATAC_peak > 0, "CTCF(peak)-ATAC(peak)", 
+                ifelse(CTCF_peak > 0 & ATAC_peak == 0, "CTCF(peak)-ATAC(nonpeak)", 
+                       ifelse(CTCF_peak == 0 & ATAC_peak > 0, "CTCF(peak)-ATAC(peak)", "CTCF(peak)-ATAC(nonpeak)")))) %>%
+  pivot_longer(-c(cell_type, chrom, start, end, motif_category, CTCF_peak, ATAC_peak), names_to = "group", values_to = "signal") %>%
+  group_by(cell_type, group) %>%
+  mutate(signal_rescale = signal/sum(signal)*1000000) 
+data_ctcf_signal_processed_summary <- data_ctcf_signal_processed %>%
+  group_by(cell_type, group, motif_category) %>%
+  summarise(signal_mean = mean(signal), signal_rescale_mean = mean(signal_rescale))
+panel_ctcf_signal_peak <- data_ctcf_signal_processed %>%
+  filter(motif_category == "CTCF(peak)-ATAC(peak)") %>%
+  filter(cell_type %in% c("Astro", "Exc", "Inh", "Micro", "Oligo", "OPC")) %>%
+  ggplot(aes(x = group, y = log(signal_rescale+1))) +
+  geom_violin(scale = "width") +
+  geom_boxplot(outlier.shape = NA, width = 0.2) +
+  geom_point(data = subset(data_ctcf_signal_processed_summary, motif_category == "CTCF(peak)-ATAC(peak)"), aes(x = group, y = log(signal_rescale_mean+1)), pch = 23, size = 4, fill = "firebrick") +
+  xlab("") +
+  ylab("log(normalized ATAC-siganl per motif +/-200bp") +
+  ggtitle("CTCF motif with ATAC peak") +
+  facet_wrap( ~ cell_type, scales = "free_y", ncol = 3) +
+  #coord_cartesian(ylim = c(0, 30)) +
+  theme_cowplot() +
+  theme(strip.background = element_blank()) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))
+panel_ctcf_signal_non_peak <- data_ctcf_signal_processed %>%
+  filter(motif_category == "CTCF(peak)-ATAC(nonpeak)") %>%
+  filter(cell_type %in% c("Astro", "Exc", "Inh", "Micro", "Oligo", "OPC")) %>%
+  ggplot(aes(x = group, y = log(signal_rescale+1))) +
+  geom_violin(scale = "width") +
+  geom_boxplot(outlier.shape = NA, width = 0.2) +
+  geom_point(data = subset(data_ctcf_signal_processed_summary, motif_category == "CTCF(peak)-ATAC(nonpeak)"), aes(x = group, y = log(signal_rescale_mean+1)), pch = 23, size = 4, fill = "firebrick") +
+  xlab("") +
+  ylab("log(normalized ATAC-siganl per motif +/-200bp") +
+  ggtitle("CTCF motif without ATAC peak") +
+  facet_wrap( ~ cell_type, scales = "free_y", ncol = 3) +
+  #coord_cartesian(ylim = c(0, 30)) +
+  theme_cowplot() +
+  theme(strip.background = element_blank()) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))
+pdf(file = "R_notebook_figures/2025_revision/figure_ATAC_CTCF_motif_signal.pdf", width = 16, height = 8)
+plot_grid(panel_ctcf_signal_peak, panel_ctcf_signal_non_peak, align = 'h', axis = 'tb', nrow = 1)
+dev.off()
+
+###################
+# plot the ATAC-seq signal at intergenic region
+###################
+data_atac_intergenic %>%
+  filter(peak_astro < 1) %>%
+  #select(chrom, start, end, AD_Exc, CT_Exc) %>%
+  filter(nonAD_Astro+lateAD_Astro+nonAD_Deid_Astro+lateAD_Deid_Astro > 0) %>%
+  pivot_longer(cols = -c(chrom, start, end, peak_astro), names_to = "group", values_to = "signal") %>%
+  filter(signal < 10) %>%
+  ggplot(aes(x = signal, fill = group)) +
+  geom_density(alpha = 0.2) +
+  xlab("") +
+  ylab("") +
+  #facet_wrap(~ group, ncol = 1) +
+  #coord_cartesian(xlim = c(0,30)) +
+  theme_cowplot()
+
+###################
+# plot CTCF anchored FRiP
+###################
+panel_cell_ctcf_frip_tss6 <- data_atac_ctcf_TSS6 %>%
+  ggplot(aes(x = disease_group, y = CTCF_FRIP, fill = disease_group)) +
+  geom_violin(scale = "area") +
+  geom_boxplot(outlier.shape = NA, width = 0.15, fill = "white") +
+  xlab("") +
+  ylab("snATAC-seq CTCF-anchored FRiP") +
+  ggtitle("TSS Enrcihment > 6") +
+  facet_wrap(~ Celltype, ncol = 4) +
+  scale_fill_manual(name = "", values = c("AD" = "#f1a340", "CT" = "#998ec3")) +
+  theme_cowplot() +
+  theme(strip.background = element_blank())
+panel_cell_ctcf_frip_tss1 <- data_atac_ctcf_TSS1 %>%
+  mutate(Celltype_merge = gsub("-deid", "", Celltype)) %>%
+  filter(Celltype_merge != "Deid") %>%
+  ggplot(aes(x = disease_group, y = CTCF_FRIP, fill = disease_group)) +
+  geom_violin(scale = "width") +
+  geom_boxplot(outlier.shape = NA, width = 0.15, fill = "white") +
+  xlab("") +
+  ylab("snATAC-seq CTCF-anchored FRiP") +
+  ggtitle("TSS Enrcihment > 1") +
+  facet_wrap(~ Celltype_merge, ncol = 4) +
+  scale_fill_manual(name = "", values = c("AD" = "#f1a340", "CT" = "#998ec3")) +
+  theme_cowplot() +
+  theme(strip.background = element_blank())
+
+###################
+# plot FRiP per cell
+###################
+panel_cell_frip_tss6 <- data_atac_cell_meta_TSS6_filter %>%
+  #filter(cellId %in% data_atac_cell_meta_TSS1$cellId) %>%
+  ggplot(aes(x = disease_group, y = FRIP, fill = disease_group)) +
+  geom_violin(scale = "width") +
+  geom_boxplot(outlier.shape = NA, width = 0.15, fill = "white") +
+  xlab("") +
+  ylab("snATAC-seq Cell FRiP") +
+  ggtitle("TSS Enrcihment > 6") +
+  facet_wrap(~ Celltype, ncol = 4) +
+  scale_fill_manual(name = "", values = c("AD" = "#f1a340", "CT" = "#998ec3")) +
+  theme_cowplot() +
+  theme(strip.background = element_blank())
+panel_cell_frip_tss1 <- data_atac_cell_meta_TSS1_filter %>%
+  mutate(Celltype_merge = gsub("-deid", "", Celltype)) %>%
+  filter(Celltype_merge != "Deid") %>%
+  ggplot(aes(x = disease_group, y = FRIP, fill = disease_group)) +
+  geom_violin(scale = "width") +
+  geom_boxplot(outlier.shape = NA, width = 0.15, fill = "white") +
+  xlab("") +
+  ylab("snATAC-seq Cell FRiP") +
+  ggtitle("TSS Enrcihment > 1") +
+  facet_wrap(~ Celltype_merge, ncol = 4) +
+  scale_fill_manual(name = "", values = c("AD" = "#f1a340", "CT" = "#998ec3")) +
+  theme_cowplot() +
+  theme(strip.background = element_blank())
+pdf(file = "R_notebook_figures/2025_revision/figure_ATAC_FRIP.exd300bp.pdf", width = 12, height = 8)
+plot_grid(panel_cell_ctcf_frip_tss6, panel_cell_ctcf_frip_tss1, panel_cell_frip_tss6, panel_cell_frip_tss1, align = 'hv', axis = 'tblr', ncol = 2)
+dev.off()
+```
+
+
+############################
+# CREs differential analysis -- revision 
+# In the revision, we also examined the differential peak analysis on the snATAC-seq data from Xiong et al. to visualize the number differentially accessible regions (DARs) between AD and non-AD samples in each cell type.
+############################
+```{r}
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+library(readxl)
+library(ggrastr)
+# load DEP from Xiong et al. Table S6
+data_atac_dep_astro <- read_excel("/work/magroup/yangz6/AD_project/shared_ref_data/xiong2023/DEP/Xiong_et_al_Supp_Table_6.xlsx", sheet = "Ast.DEP")
+data_atac_dep_exc <- read_excel("/work/magroup/yangz6/AD_project/shared_ref_data/xiong2023/DEP/Xiong_et_al_Supp_Table_6.xlsx", sheet = "Ex.DEP")
+data_atac_dep_inh <- read_excel("/work/magroup/yangz6/AD_project/shared_ref_data/xiong2023/DEP/Xiong_et_al_Supp_Table_6.xlsx", sheet = "In.DEP")
+data_atac_dep_micro <- read_excel("/work/magroup/yangz6/AD_project/shared_ref_data/xiong2023/DEP/Xiong_et_al_Supp_Table_6.xlsx", sheet = "Microglia.DEP")
+data_atac_dep_oligo <- read_excel("/work/magroup/yangz6/AD_project/shared_ref_data/xiong2023/DEP/Xiong_et_al_Supp_Table_6.xlsx", sheet = "Oligo.DEP")
+data_atac_dep_opc <- read_excel("/work/magroup/yangz6/AD_project/shared_ref_data/xiong2023/DEP/Xiong_et_al_Supp_Table_6.xlsx", sheet = "OPC.DEP")
+# add cell_type
+data_atac_dep_astro[, "cell_type"] <- "Astro"
+data_atac_dep_exc[, "cell_type"] <- "Exc"
+data_atac_dep_inh[, "cell_type"] <- "Inh"
+data_atac_dep_micro[, "cell_type"] <- "Micro"
+data_atac_dep_oligo[, "cell_type"] <- "Oligo"
+data_atac_dep_opc[, "cell_type"] <- "OPC"
+# merge all data
+data_atac_dep_all <- rbind(data_atac_dep_astro, data_atac_dep_exc, data_atac_dep_inh, 
+                           data_atac_dep_micro, data_atac_dep_oligo, data_atac_dep_opc)
+# save DEP
+data_atac_dep_all_sig <- data_atac_dep_all %>%
+  mutate(diff_group = ifelse(logFC > 0 & padj < 0.05, 'UP',
+                             ifelse(logFC < 0 & padj < 0.05, 'Down', 'Not_sig'))) %>%
+  group_by(cell_type, diff_group) %>%
+  filter(diff_group != "Not_sig") %>%
+  separate_wider_delim(cols = 'gene', delim = '_', names = c("chrom", "start", "end"))
+write.table(subset(data_atac_dep_all_sig, cell_type == 'Astro'), file = "results/202507/ATAC_DEP/xiong_Astro_DEP.bed", sep = '\t', col.names = F, row.names = F, quote = F)  
+write.table(subset(data_atac_dep_all_sig, cell_type == 'Exc'), file = "results/202507/ATAC_DEP/xiong_Exc_DEP.bed", sep = '\t', col.names = F, row.names = F, quote = F)  
+write.table(subset(data_atac_dep_all_sig, cell_type == 'Inh'), file = "results/202507/ATAC_DEP/xiong_Inh_DEP.bed", sep = '\t', col.names = F, row.names = F, quote = F)  
+write.table(subset(data_atac_dep_all_sig, cell_type == 'Micro'), file = "results/202507/ATAC_DEP/xiong_Micro_DEP.bed", sep = '\t', col.names = F, row.names = F, quote = F)  
+write.table(subset(data_atac_dep_all_sig, cell_type == 'Oligo'), file = "results/202507/ATAC_DEP/xiong_Oligo_DEP.bed", sep = '\t', col.names = F, row.names = F, quote = F)  
+write.table(subset(data_atac_dep_all_sig, cell_type == 'OPC'), file = "results/202507/ATAC_DEP/xiong_OPC_DEP.bed", sep = '\t', col.names = F, row.names = F, quote = F)
+# plot the volcano plot
+panel_xiong_atac_dep <- data_atac_dep_all %>% 
+  ggplot(aes(x = logFC, y = -log10(padj), color = cell_type)) +
+  rasterise(geom_point(alpha = 0.1, size = 0.1), dpi = 600) +
+  geom_hline(yintercept = -log10(0.05), color = "black", linetype = 2) +
+  geom_vline(xintercept = 0.0, color = "black") +
+  xlab("log fold change") +
+  ylab("adjusted p-value") +
+  facet_wrap(~ cell_type, nrow = 2) +
+  scale_color_manual(name = "", values = c("Exc" = "#30952c", "Inh" = "#a9da82", "Astro" = "#dd2124", "Oligo" = "#fe9b42", "OPC" = "#a7502a", "Micro" = "#c3a9cf", "Endo" = "#a6cee3", "VLMC" = "#1f78b4")) +
+  #scale_y_continuous() +
+  theme_cowplot() +
+  theme(strip.background = element_blank())
+pdf(file = "R_notebook_figures/2025_revision/figure_atac_xiong_DEP_volcano_plot.pdf", width = 6, height = 4)
+print(panel_xiong_atac_dep)
+dev.off()
+# plot the barplot of ATAC-seq peak and DEP 
+data_atac_xiong_summary <- read.table(file = "results/202507/ATAC_DEP_peak_count.xiong.tsv", header = T, sep = '\t', stringsAsFactors = F)
+panel_xiong_atac_peak_count_by_dep <- data_atac_xiong_summary %>%
+  pivot_longer(cols = c("UP_DEPs", "DOWN_DEPs", "Other_Peaks"), names_to = "peak_group", values_to = "count") %>%
+  ggplot(aes(x = cell_type, y = count/TOTAL_Peaks, fill = peak_group)) +
+  geom_col(color = "black", width = 0.7) +
+  xlab("") +
+  ylab("Fraction") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(name = "", values = c("UP_DEPs" = "#e41a1c", "DOWN_DEPs" = "#377eb8", "Other_Peaks" = "grey")) +
+  theme_cowplot()
+pdf(file = "R_notebook_figures/2025_revision/figure_atac_xiong_peak_fraction_by_DEP.pdf", width = 6, height = 3)
+print(panel_xiong_atac_peak_count_by_dep)
+dev.off()
+# plot the peak count 
+data_atac_ruochi_summary <- read.table(file = "results/202507/ATAC_DEP_peak_count.ruochi.tsv", header = T, sep = '\t', stringsAsFactors = F)
+panel_xiong_atac_peak_count_by_overlap <- data_atac_ruochi_summary %>%
+  pivot_longer(cols = c("shared", "unique"), names_to = "group", values_to = "count") %>%
+  filter(cell_type != 'Vas') %>%
+  mutate(group = factor(group, levels = rev(c("shared", "unique")))) %>%
+  ggplot(aes(x = disease_group, y = count, fill = group)) +
+  geom_col(color = "black", width = 0.7) +
+  xlab("") +
+  ylab("Peak count") +
+  facet_wrap(~ cell_type, nrow = 2) +
+  scale_fill_manual(name = "", values = c("shared" = "#8da0cb", "unique" = "#66c2a5")) +
+  scale_y_continuous(expand = c(0,0)) +
+  theme_cowplot() +
+  theme(strip.background = element_blank())
+pdf(file = "R_notebook_figures/2025_revision/figure_atac_ruochi_peak_fraction_by_overlap.pdf", width = 6, height = 4)
+print(panel_xiong_atac_peak_count_by_overlap)
+dev.off()
+```
+
+
+############################
+# eQTL -- gradient -- revision
+# In the revision, we analyzed GTEx cis-eQTLs (restricted to variants whose effect allele matches our reference genome). Stratifying variants by fine-mapping posterior inclusion probability (PIP) and distance to the TSS。
+# We then examined Hicformer predicted gradients at these loci.
+############################
+```{r}
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+library(UpSetR) # for UpSet plot
+# load eQTL normalized gradient
+data_eqtl_gradient_gtex <- read.table(file = "shared_xinyue/gradient/eqtl_gradient_plotting_all.csv", header = T, sep = ',', stringsAsFactors = F)
+# load eQTL
+data_eqtl_GTEx <- read.table(file = "data/eQTL_Catelogue/DLPFC_GTRx.credible_sets.no_filter.eqtl_passed.tsv", sep = '\t', header = T, stringsAsFactors = F) 
+data_eqtl_GTEx <- data_eqtl_GTEx %>%
+  mutate(label = "GTEx") %>%
+  mutate(eqtl_label = paste0(variant_id, '_', gene_name))
+data_eqtl_BrainSeq <- read.table(file = "data/eQTL_Catelogue/DLPFC_BrainSeq.credible_sets.no_filter.eqtl_passed.tsv", sep = '\t', header = T, stringsAsFactors = F)
+data_eqtl_BrainSeq <- data_eqtl_BrainSeq %>%
+  mutate(label = "BrainSeq") %>%
+  mutate(eqtl_label = paste0(variant_id, '_', gene_name))
+data_eqtl_CommonMid <- read.table(file = "data/eQTL_Catelogue/DLPFC_CommonMid.credible_sets.no_filter.eqtl_passed.tsv", sep = '\t', header = T, stringsAsFactors = F)
+data_eqtl_CommonMid <- data_eqtl_CommonMid %>% 
+  mutate(label = "CommonMind") %>%
+  mutate(eqtl_label = paste0(variant_id, '_', gene_name))
+# create UpSet plot to show the overlap of the dataset
+data_eqtl_GTEx_pass <- data_eqtl_GTEx %>%
+  filter(ref_allele == Allele_increase_expr) %>%
+  filter(pip > 0.9) %>%
+  select(variant_id, gene_id, gene_name, eqtl_label)
+data_eqtl_BrainSeq_pass <- data_eqtl_BrainSeq %>%
+  filter(ref_allele == Allele_increase_expr) %>%
+  filter(pip > 0.9) %>%
+  select(variant_id, gene_id, gene_name, eqtl_label)
+data_eqtl_CommonMid_pass <- data_eqtl_CommonMid %>%
+  filter(ref_allele == Allele_increase_expr) %>%
+  filter(pip > 0.9) %>%
+  select(variant_id, gene_id, gene_name, eqtl_label)
+eqtl_list_input_pass <- list(GTEx_pass = data_eqtl_GTEx_pass$eqtl_label, BrainSeq_pass = data_eqtl_BrainSeq_pass$eqtl_label, CommonMind_pass = data_eqtl_CommonMid_pass$eqtl_label)
+eqtl_list_input <- list(GTEx = data_eqtl_GTEx$eqtl_label, BrainSeq = data_eqtl_BrainSeq$eqtl_label, CommonMind = data_eqtl_CommonMid$eqtl_label)
+# make the UpSet plot
+pdf(file = "R_notebook_figures/2025_revision/figure_eqtl_dataset_comparision.pdf", width = 6, height = 4) 
+upset(fromList(eqtl_list_input_pass), order.by = "freq", mainbar.y.label = "eQTL (pip > 0.9) count", sets.x.label = "eQTL (pip > 0.9) count")
+upset(fromList(eqtl_list_input), order.by = "freq", mainbar.y.label = "eQTL count", sets.x.label = "eQTL count")
+dev.off()
+#######################
+# plot the background density plot
+panel_eQTL_GTEx_background <- data_eqtl_gradient_gtex %>%
+  filter(group == "Background") %>%
+  separate_wider_delim(cell_type, delim = "-", names = c("cell_type", "disease_group")) %>%
+  mutate(cell_type = factor(cell_type, levels = c("Exc", "Inh", "Astro", "Oligo", "Micro", "OPC"))) %>%
+  ggplot(aes(x = abs_z)) +
+  geom_density(fill = "lightgrey") +
+  geom_boxplot(aes(y = -0.35), outlier.shape = NA, width = 0.5, fill = "white", color="black") +
+  xlab("") +
+  ylab("") +
+  facet_wrap(cell_type ~ distance + disease_group, ncol = 4) +
+  coord_cartesian(xlim = c(-1.2, 2)) +
+  theme_cowplot() +
+  theme(strip.background = element_blank())
+panel_eQTL_GTEx_pip_group <- data_eqtl_gradient_gtex %>%
+  filter(group != "Background") %>%
+  separate_wider_delim(cell_type, delim = "-", names = c("cell_type", "disease_group")) %>%
+  mutate(group = factor(group, levels = c("pip > 0.9", "pip 0.1-0.9", "pip < 0.1"))) %>%
+  mutate(cell_type = factor(cell_type, levels = c("Exc", "Inh", "Astro", "Oligo", "Micro", "OPC"))) %>%
+  ggplot(aes(x = abs_z, y = group, color = group)) +
+  geom_jitter(height = 0.15, width = 0, size = 0.7, alpha = 0.7) +
+  geom_boxplot(outlier.shape = NA, width = 0.4, fill = "white", color="black") +
+  xlab("") +
+  ylab("") +
+  facet_wrap(cell_type ~ distance + disease_group, ncol = 4) +
+  scale_color_manual(name = "", values = c("pip > 0.9" = "#084594", "pip 0.1-0.9" = "#4292c6", "pip < 0.1" = "#9ecae1")) +
+  coord_cartesian(xlim = c(-1.2 ,2)) +
+  theme_cowplot() +
+  theme(legend.position = "none") +
+  theme(strip.background = element_blank())
+pdf(file = "R_notebook_figures/2025_revision/figure_eqtl_finemapping_GTEx.pdf", width = 8, height = 12) 
+print(panel_eQTL_GTEx_background)
+print(panel_eQTL_GTEx_pip_group)
+dev.off()
+```
+
+
+############################
+# eQTL -- hicformer example -- revision
+# Here, we show an example gene (ENSG00000114331) with high-confidence eQTLs (PIP > 0.9) from eQTL datasets. We visualize the Hicformer-predicted gradients at these eQTL loci across multiple cell types.
+############################
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(cowplot)
+library(ggbreak) # for break y-axis for large gradient at TSS
+# load eQTL
+data_eqtl_BrainSeq <- read.table(file = "data/eQTL_Catelogue/DLPFC_BrainSeq.credible_sets.no_filter.eqtl_passed.tsv", sep = '\t', header = T, stringsAsFactors = F)
+data_eqtl_BrainSeq$label <- "BrainSeq"
+data_eqtl_CommonMid <- read.table(file = "data/eQTL_Catelogue/DLPFC_CommonMid.credible_sets.no_filter.eqtl_passed.tsv", sep = '\t', header = T, stringsAsFactors = F)
+data_eqtl_CommonMid$label <- "CommonMid"
+data_eqtl_GTEx <- read.table(file = "data/eQTL_Catelogue/DLPFC_GTRx.credible_sets.no_filter.eqtl_passed.tsv", sep = '\t', header = T, stringsAsFactors = F) 
+data_eqtl_GTEx$label <- "GTEx"
+# merge
+data_eqtl <- rbind(data_eqtl_BrainSeq, data_eqtl_CommonMid, data_eqtl_GTEx)
+# load gene gradient 
+data_gradient <- read.table(file = "results/202507/gene_example/eQTL_example.tsv", sep = '\t', header = T, stringsAsFactors = F)
+##########
+# example I: ENSG00000114331
+########## 
+eg_gene_id = "ENSG00000114331"
+eg_gene_chrom = unique(subset(data_gradient, gene_id == eg_gene_id)$chrom)
+eg_gene_start = min(subset(data_gradient, gene_id == eg_gene_id)$start) 
+eg_gene_end = max(subset(data_gradient, gene_id == eg_gene_id)$end) 
+eg_gene_eqtl <- data_eqtl %>%
+  filter(chrom == eg_gene_chrom & start >= eg_gene_start & end <= eg_gene_end)
+# plot gradient
+plot_gradient <- data_gradient %>%
+  separate_wider_delim(cell_type, '-', names = c("cell_type", "disease_group")) %>%
+  mutate(major = gsub(" .*", "", cell_type)) %>%
+  filter(gene_id == eg_gene_id) %>%
+  filter(gradient_type == 'zscore') %>%
+  filter(gradient_label == 'seq_l2') %>%
+  group_by(gene_id, chrom, start, end, bin_idx, major, disease_group, gradient_label, gradient_type) %>%
+  summarise(gradient_score = mean(gradient_score)) %>%
+  filter(major %in% c("Astro", "Exc", "Inh", "Micro", "Oligo", "OPC")) %>%
+  #filter(major %in% c("Astro")) %>%
+  mutate(is_sig = ifelse(gradient_score > 0, "sig", "non-sig")) %>%
+  ggplot(aes(x = start, y = gradient_score)) +
+  geom_vline(xintercept = 195356147, linetype = 2) +
+  geom_vline(xintercept = 195608393, linetype = 2) +
+  geom_col(aes(fill = is_sig), width = 1021024) +
+  #geom_hline(yintercept = 0.0, linetype = 1, linewidth = 0.5) +
+  xlab("") +
+  ylab("") +
+  ggtitle(paste0("Exmaple gene ", eg_gene_id, " range from ", eg_gene_chrom, ':', eg_gene_start, "-", eg_gene_end)) +
+  facet_wrap(major + disease_group ~ ., ncol = 1, strip.position = "right") +
+  scale_x_continuous(expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0), breaks = c(0, 2, 4)) +
+  scale_fill_manual(name = "", values = c("sig" = "#e41a1c", "non-sig" = "#377eb8")) +
+  coord_cartesian(xlim = c(eg_gene_start, eg_gene_end), ylim = c(-1,5)) +
+  theme_cowplot() +
+  theme(strip.background = element_blank()) +
+  theme(strip.text.y = element_text(angle = 0, hjust = 0)) +
+  theme(plot.title = element_text(face = "bold", size = 9))
+plot_eqtl <- eg_gene_eqtl %>%
+  group_by(chrom, start, gene_id, gene_name) %>%
+  summarise(pip = max(pip)) %>%
+  ggplot(aes(x = start, y = pip)) +
+  geom_segment(aes(x=start, xend=start, y=0, yend=pip)) +
+  geom_hline(yintercept = 0.9, linetype = 2) +
+  geom_point(size=2, color="red", fill = alpha("orange", 0.8), alpha = 0.7, shape=21, stroke=1) +
+  xlab("") +
+  ylab("Pip score") +
+  #facet_wrap(~ label, ncol = 1, strip.position = "right") +
+  scale_x_continuous(expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0.1)) +
+  coord_cartesian(xlim = c(eg_gene_start, eg_gene_end)) +
+  theme_cowplot() +
+  theme(strip.background = element_blank())
+pdf(file = "R_notebook_figures/2025_revision/figure_hicformer_eqtl_example_ENSG00000114331.pdf", width = 8, height = 8)
+plot_grid(plot_gradient, plot_eqtl, align = 'v', axis = 'lr', ncol = 1, rel_heights = c(5,1))
+dev.off()
+```
+
+
+############################
+# AD risk gene -- revision
+# In the revision, we examined the chromatin interactions at AD risk genes identified from Open Targets GWAS data.
+# We intersected AD risk genes from OpenTargets (GWAS association score > 0.4) with our DEG (adjusted p-value < 0.05, |log2FC| > 0.3). Using the same distance definition (short-range < 128 kb; mid-range 128 kb – 4 Mb), we quantified (i) changes in short-range interactions frequency and (ii) relative enrichment of mid-range interactions along at each locus using a sliding window approach (64 kb bins). 
+############################
+```{r}
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+library(ggrepel)
+# patient list
+patient_list_20 <- NULL
+# load cell annotation
+data_cell_anno <- read.table(file = "results/202501/cell_meta_table.tsv", sep = '\t', header = T, stringsAsFactors = F)
+# load open target GWAS association score
+data_gwas_score <- read.table(file = "results/202507/open_targets/GWAS_associated_genes_AD.tsv", header = T, sep = '\t', stringsAsFactors = F)
+ad_risk_gene_list = data_gwas_score$approvedSymbol
+###########################
+# load gene CRE annotation
+###########################
+data_xiong_risk_gene_cre_anno <- data.frame()
+for (cell_type in c("Astro", "Exc", "Inh", "Oligo", "Micro", "OPC")) {
+  data <- read.table(file = paste0("/work/magroup/yangz6/AD_project/results/202501/gene_tss_decay/", "ATAC_xiong_", cell_type, ".gene_flank_CRE.anno.tsv"), sep = '\t', header = T)
+  data <- data %>%
+    filter(gene_name %in% ad_risk_gene_list)
+  # add cell type
+  data$major <- cell_type
+  data_xiong_risk_gene_cre_anno <- rbind(data_xiong_risk_gene_cre_anno, data)
+  cat("load ", cell_type, '\n')
+}
+write.table(data_xiong_risk_gene_cre_anno, file = "results/202507/risk_gene/xiong_risk_gene_cre_anno.tsv", sep = '\t', col.names = T, row.names = F, quote = F)
+data_xiong_risk_gene_cre_anno <- read.table(file = "results/202507/risk_gene/xiong_risk_gene_cre_anno.tsv", sep = '\t', header = T, stringsAsFactors = F)
+########################################
+# load CRE decay - chromatin interaction
+########################################
+load_cre_decay <- function(folder) {
+  merged_data <- data.frame()
+  for (patient_id in patient_list_20) {
+    data <- read.table(file = paste0(folder, '/', patient_id, ".cell_CRE_decay.tsv"), sep = '\t', header = T, stringsAsFactors = F)
+    
+    merged_data <- rbind(merged_data, data)
+    cat(paste0("Load data for ", patient_id, "\n"))
+  } 
+  return(merged_data)
+}
+data_xiong_cre_decay <- load_cre_decay("/work/magroup/yangz6/AD_project/results/202501/gene_tss_decay/ATAC_xiong/")
+data_xiong_cre_decay <- data_xiong_cre_decay %>%
+  filter(gene_name %in% ad_risk_gene_list)
+data_xiong_cre_decay <- merge(data_xiong_cre_decay, data_cell_anno[, c("cell_id", "major", "disease_group")], by = "cell_id", sort = F)
+write.table(data_xiong_cre_decay, file = "results/202507/risk_gene/xiong_risk_gene_cre_interaction.tsv", sep = '\t', col.names = T, row.names = F, quote = F)
+data_xiong_cre_decay <- read.table(file = "results/202507/risk_gene/xiong_risk_gene_cre_interaction.tsv", sep = '\t', header = T, stringsAsFactors = F)
+# process interaction data 
+data_xiong_cre_decay_agg <- data_xiong_cre_decay %>%
+  filter(major %in% c("Astro", "Exc", "Inh", "Oligo", "Micro", "OPC")) %>%
+  group_by(major, disease_group, gene_name, CRE_index) %>%
+  summarise(count = sum(count)) %>%
+  arrange(gene_name, major, disease_group, CRE_index)
+# merge with CRE annotation
+data_xiong_cre_decay_agg <- merge(data_xiong_cre_decay_agg, data_xiong_risk_gene_cre_anno[, c("major", "gene_name", "cre_idx", "cre2tss_distance")], by.x = c("major", "gene_name", "CRE_index"), by.y = c("major", "gene_name", "cre_idx"), sort = F)
+###############
+# load DEG MAST
+###############
+data_deg_MAST <- data.frame()
+for (cell_type in c("Astro", "Exc", "Inh", "Micro", "Oligo", "OPC")) {
+  data = read.table(file = paste0("results/202501/gene_expr/DEG_results/all/major_cell_type/", cell_type, "-AD-vs-CT-MAST.csv"), sep = ',', header = T, stringsAsFactors = F)
+  colnames(data) <- c("gene_name", "pvalue", "log2FoldChange", "pct.1", "pct.2", "padj")
+  data$cell_type <- cell_type
+  data_deg_MAST <- rbind(data_deg_MAST, data)
+}
+##############
+# load the region-specific chromatin interaction comparison
+##############
+data_distance <- read.table(file = "results/202507/cool_file/major/genomic_bin_distance_summary.agg.v2.tsv", sep = '\t', header = T, stringsAsFactors = F)
+# get the order of cell based on the median log2 ratio
+cell_type_order <- data_distance %>%
+  group_by(cell_type) %>%
+  summarise(median_ratio = median(log2_ratio_smooth)) %>%
+  arrange(-median_ratio)
+# annotate the AD risk gene 
+data_xiong_risk_gene_anno <- data_xiong_risk_gene_cre_anno %>%
+  filter(cre_idx == 0) %>%
+  mutate(start = tss %/% 64000 * 64000)
+# merge with region-specific interactin score
+data_xiong_risk_gene_anno <- merge(data_xiong_risk_gene_anno, data_distance, by.x = c("major", "chrom", "start"), by.y = c("cell_type", "chrom", "start"), sort = F, all.x = T)
+# merge with GWAS association score
+data_xiong_risk_gene_anno <- merge(data_xiong_risk_gene_anno, data_gwas_score[, c("approvedSymbol", "score")], by.x = "gene_name", by.y = "approvedSymbol", sort = F, all.x = T)
+# merge with DEG
+data_xiong_risk_gene_anno <- merge(data_xiong_risk_gene_anno, data_deg_MAST[, c("cell_type", "gene_name", "padj", "log2FoldChange")], by.x = c("major", "gene_name"), by.y = c("cell_type", "gene_name"))
+#
+# plot the fraction of interaction changes at various distance group
+panel_AD_risk_gene_scatter <- data_xiong_risk_gene_anno %>%
+  filter(major %in% c("Exc", "Inh")) %>%
+  # filter by GWAS association
+  filter(score > 0.4) %>%
+  # filter by DEG padj
+  filter(padj < 0.05 & abs(log2FoldChange) > 0.3) %>%
+  mutate(mid_fraction_AD = mid_range_AD/total_AD, 
+         mid_fraction_CT = mid_range_CT/total_CT) %>%
+  mutate(diff_short = short_fraction_AD - short_fraction_CT, diff_mid = mid_fraction_AD - mid_fraction_CT) %>%
+  group_by(major) %>%
+  mutate(chi2_pvalue_smooth = p.adjust(chi2_pvalue_smooth, method = "BH")) %>%
+  mutate(chi2_pvalue_smooth_mid = p.adjust(chi2_pvalue_smooth_mid, method = "BH")) %>%
+  #filter(gene_name == "CLU") +
+  #filter(chi2_pvalue_smooth < 0.05) %>%
+  ggplot(aes(x = diff_short/100, y = log2_ratio_mid, fill = log2FoldChange, size = score, label = ifelse(gene_name %in% c("CLU", "APH1B"), gene_name, gene_name))) +
+  geom_point(alpha = 0.7, pch = 21) +
+  geom_text_repel(segment.color = "grey50",
+                  lineheight = 0.9,
+                  size = 2, box.padding = 0.9, max.overlaps = Inf, show.legend = F) +
+  #geom_text(size = 2) +
+  geom_hline(yintercept = 0.0) +
+  geom_vline(xintercept = 0.0) +
+  xlab("Short-range diff. (AD - non-AD)") +
+  ylab("Log2 ratio(MR/SR)") +
+  facet_wrap(~ major, ncol = 3) +
+  #scale_fill_distiller(name = "GWAS asso. score", palette = "Spectral", limits = c(0.5, 0.9), oob = scales::squish) +
+  scale_fill_gradientn(name = "DEG log2FC", colours = c("#0571b0","white","#ca0020"), values = scales::rescale(c(-1,0,1)), guide = "colorbar", limits=c(-1,1), oob = scales::squish) +
+  scale_x_continuous(labels = scales::percent) +
+  theme_cowplot() +
+  theme(strip.background = element_blank())
+pdf(file = "R_notebook_figures/2025_revision/figure_AD_GWAS_risk_gene_interaction_decay.pdf", width = 10, height = 4)
+print(panel_AD_risk_gene_scatter)
+dev.off()
+```
+
+
+############################
+# GWAS -- gradient -- revision
+# In the revision, we compared Hicformer-predicted gradients at AD GWAS loci from two large-scale GWAS studies (Jansen et al., 2019; Kunkle et al., 2019). We stratified variants by p-value (p < 5e-8; 5e-8 ≤ p < 0.05) and distance to the TSS (short-range < 128 kb; mid-range 128 kb – 4 Mb), and examined the distribution of predicted gradients at these loci across multiple cell types.
+############################
+```{r}
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+library(ggrastr)
+data_gwas_gradient_jansen <- read.table(file = "shared_xinyue/gradient/GWAS_Jansenetal_2019_gradient_plotting_all.csv", header = T, sep = ',', stringsAsFactors = F)
+data_gwas_gradient_kunkle <- read.table(file = "shared_xinyue/gradient/GWAS_Kunkle_Stage1_gradient_plotting_all.csv", header = T, sep = ',', stringsAsFactors = F)
+# plot the background density plot
+panel_gwas_jansen_background <- data_gwas_gradient_jansen %>%
+  filter(group == "Background") %>%
+  separate_wider_delim(cell_type, delim = "-", names = c("cell_type", "disease_group")) %>%
+  filter(cell_type == "Micro") %>%
+  ggplot(aes(x = abs_z)) +
+  geom_density(fill = "lightgrey") +
+  geom_boxplot(aes(y = -0.35), outlier.shape = NA, width = 0.5, fill = "white", color="black") +
+  xlab("") +
+  ylab("") +
+  facet_wrap(cell_type ~ distance + disease_group, ncol = 4) +
+  coord_cartesian(xlim = c(-1.2, 2)) +
+  theme_cowplot() +
+  theme(strip.background = element_blank())
+panel_gwas_jansen_pval_group <- data_gwas_gradient_jansen %>%
+  filter(group != "Background") %>%
+  separate_wider_delim(cell_type, delim = "-", names = c("cell_type", "disease_group")) %>%
+  filter(cell_type == "Micro") %>%
+  mutate(group = factor(group, levels = c("p < 5e-8", "5e-8 ≤ p < 0.05"))) %>%
+  ggplot(aes(x = abs_z, y = group, color = group)) +
+  rasterise(geom_jitter(height = 0.15, width = 0, size = 0.7, alpha = 0.7), dpi = 600) +
+  geom_boxplot(outlier.shape = NA, width = 0.4, fill = "white", color="black") +
+  xlab("") +
+  ylab("") +
+  facet_wrap(cell_type ~ distance + disease_group, ncol = 4) +
+  scale_color_manual(name = "", values = c("p < 5e-8" = "#084594","5e-8 ≤ p < 0.05" = "#9ecae1")) +
+  coord_cartesian(xlim = c(-1.2 ,2)) +
+  theme_cowplot() +
+  theme(legend.position = "none") +
+  theme(strip.background = element_blank())
+panel_gwas_kunkle_background <- data_gwas_gradient_kunkle %>%
+  filter(group == "Background") %>%
+  separate_wider_delim(cell_type, delim = "-", names = c("cell_type", "disease_group")) %>%
+  filter(cell_type == "Micro") %>%
+  ggplot(aes(x = abs_z)) +
+  geom_density(fill = "lightgrey") +
+  geom_boxplot(aes(y = -0.35), outlier.shape = NA, width = 0.5, fill = "white", color="black") +
+  xlab("") +
+  ylab("") +
+  facet_wrap(cell_type ~ distance + disease_group, ncol = 4) +
+  coord_cartesian(xlim = c(-1.2, 2)) +
+  theme_cowplot() +
+  theme(strip.background = element_blank())
+panel_gwas_kunkle_pval_group <- data_gwas_gradient_kunkle %>%
+  filter(group != "Background") %>%
+  separate_wider_delim(cell_type, delim = "-", names = c("cell_type", "disease_group")) %>%
+  filter(cell_type == "Micro") %>%
+  mutate(group = factor(group, levels = c("p < 5e-8", "5e-8 ≤ p < 0.05"))) %>%
+  ggplot(aes(x = abs_z, y = group, color = group)) +
+  rasterise(geom_jitter(height = 0.15, width = 0, size = 0.7, alpha = 0.7), dpi = 600) +
+  geom_boxplot(outlier.shape = NA, width = 0.4, fill = "white", color="black") +
+  xlab("") +
+  ylab("") +
+  facet_wrap(cell_type ~ distance + disease_group, ncol = 4) +
+  scale_color_manual(name = "", values = c("p < 5e-8" = "#084594","5e-8 ≤ p < 0.05" = "#9ecae1")) +
+  coord_cartesian(xlim = c(-1.2 ,2)) +
+  theme_cowplot() +
+  theme(legend.position = "none") +
+  theme(strip.background = element_blank())
+pdf(file = "R_notebook_figures/2025_revision/figure_gwas_gradient.pdf", width = 12, height = 5) 
+plot_grid(panel_gwas_jansen_background, panel_gwas_jansen_pval_group, align = "v", axis = "lr", ncol = 1, rel_heights = c(1,1))
+plot_grid(panel_gwas_kunkle_background, panel_gwas_kunkle_pval_group, align = "v", axis = "lr", ncol = 1, rel_heights = c(1,1))
+dev.off()
+```
+
+
+############################
+# GWAS -- lead variant vs non-lead variant (opentargets) -- revision
+# We also examined if Hicformer predicted gradients differ between lead and non-lead variants at AD GWAS loci identified from Open Targets. 
+############################
+```{r}
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+library(ggrepel)
+# load the AD association score
+data_AD_gwas 
+# load the GWAS gradient result
+data_gwas <- read.table(file = "results/202507/open_targets/gradient_result.gwas_variant_gradient.tsv", sep = '\t', header = T, stringsAsFactors = F)
+data_gwas_gene <- data_gwas %>%
+  select(gene_id, gene_symbol, locus_id, lead_variant, L2G_score, variant_count) %>%
+  distinct() %>%
+  arrange(-variant_count) %>%
+  ggplot(aes(x = variant_count)) +
+  geom_histogram(binwidth = 1) +
+  xlab("") +
+  ylab("") +
+  theme_cowplot()
+tmp <- data_gwas %>%
+  filter(gradient_type == "zscore") %>%
+  filter(gradient_label == "seq_l2") %>%
+  filter(variant_effect %in% c("intron_variant", "upstream_gene_variant")) %>%
+  filter(variant_count > 5) %>%
+  filter(L2G_score > 0.5) %>% 
+  filter(gradient_bin_idx != 0) %>%
+  separate_wider_delim(gradient_celltype, '-', names = c("cell_type", "disease_group")) %>%
+  mutate(major = gsub(" .*", "", cell_type)) %>%
+  filter(major == "Micro") %>%
+  filter(disease_group == "CT") %>%
+  ggplot(aes(x = is_lead, y = gradient_score, color = is_lead)) +
+  geom_boxplot() +
+  #geom_jitter(height = 0, width = 0.2, size = 0.8, alpha = 0.4) +
+  xlab("") +
+  ylab("") +
+  facet_wrap(~ gene_symbol, ncol = 8, scales = "free_y") +
+  theme_cowplot() +
+  theme(strip.background = element_blank())
+# enrichment of gradient lead variant vs non-lead variant
+data_lead <- read.table(file = "results/202507/open_targets/lead_variant_enrichment.tsv", sep = '\t', header = T, stringsAsFactors = F)
+gene_order <- unique(data_lead$gene_symbol)
+
+## plot the association score and L2G_score
+data_lead %>%
+  select(gene_id, gene_symbol, association_score, L2G_score_ave) %>%
+  distinct() %>%
+  ggplot(aes(x = L2G_score_ave, y = association_score)) +
+  geom_point() +
+  geom_abline(slope = 1,  intercept = 0.0) +
+  xlab("L2G score") +
+  ylab("Association score") +
+  theme_cowplot()
+  
+panel_gwas_lead_variant_vs_gradient <- data_lead %>%
+  separate_wider_delim(cell_type, '-', names = c("cell_type", "disease_group")) %>%
+  mutate(major = gsub(" .*", "", cell_type)) %>%
+  mutate(gene_symbol = factor(gene_symbol, levels = rev(gene_order))) %>%
+  filter(L2G_score_ave > 0.5) %>%
+  mutate(diff_sig = ifelse(p_value < 0.1, diff, 0)) %>%
+  ggplot(aes(x = cell_type, y = gene_symbol, fill = diff_sig)) +
+  geom_tile() +
+  xlab("") +
+  ylab("") +
+  facet_wrap(~ disease_group, nrow = 1) +
+  scale_fill_gradientn(name = "delta_gradient", colours = c("#0571b0","white","#ca0020"), values = scales::rescale(c(-2,0,5)), guide = "colorbar", limits=c(-2,5), oob = scales::squish) +
+  theme_cowplot() +
+  theme(strip.background = element_blank()) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))
+pdf(file = "R_notebook_figures/2025_revision/figure_hicformer_gwas_lead_variant_gradient.heatmap.pdf", width = 8, height = 12)
+print(panel_gwas_lead_variant_vs_gradient)
+dev.off()
+#
+data_lead_filter_by_l2g <- data_lead %>%
+  separate_wider_delim(cell_type, '-', names = c("cell_type", "disease_group")) %>%
+  mutate(major = gsub(" .*", "", cell_type)) %>%
+  mutate(gene_symbol = factor(gene_symbol, levels = rev(gene_order))) %>%
+  filter(L2G_score_ave > 0.5) %>%
+  mutate(diff_sig = ifelse(p_value < 0.1, diff, NA)) %>%
+  select(major, disease_group, gene_id, gene_symbol, association_score, diff_sig) %>%
+  group_by(disease_group, gene_id, gene_symbol, association_score) %>%
+  summarise(diff_sig_mean = mean(diff_sig, na.rm = T), diff_sig_sd = sd(diff_sig, na.rm = T), count = n()) %>%
+  filter(!is.na(diff_sig_mean) & !is.na(diff_sig_sd)) %>%
+  mutate(diff_sig_max = diff_sig_mean + diff_sig_sd/sqrt(count), diff_sig_min = diff_sig_mean - diff_sig_sd/sqrt(count)) %>%
+  select(disease_group, gene_id, gene_symbol, association_score, diff_sig_mean, diff_sig_max, diff_sig_min)
+data_lead_filter_by_l2g_AD <- subset(data_lead_filter_by_l2g, disease_group == "AD")
+data_lead_filter_by_l2g_CT <- subset(data_lead_filter_by_l2g, disease_group == "CT")
+data_lead_filter_by_l2g_merge <- merge(data_lead_filter_by_l2g_AD[, c("gene_id", "gene_symbol", "association_score", "diff_sig_mean", "diff_sig_max", "diff_sig_min")], data_lead_filter_by_l2g_CT[, c("gene_symbol", "gene_id", "diff_sig_mean", "diff_sig_max", "diff_sig_min")], by = c("gene_id", "gene_symbol"), suffixes = c("_AD", "_CT"), sort = F)
+#
+panel_gwas_lead_variant_vs_gradient_scatterplot <- data_lead_filter_by_l2g_merge %>%
+  ggplot(aes(x = diff_sig_mean_AD, xmax = diff_sig_max_AD, xmin = diff_sig_min_AD, y = diff_sig_mean_CT, ymax = diff_sig_max_CT, ymin = diff_sig_min_CT, label = gene_symbol, fill = association_score)) +
+  geom_hline(yintercept = 0.0, linetype = 2, color = "darkgrey") +
+  geom_vline(xintercept = 0.0, linetype = 2, color = "darkgrey") +
+  geom_errorbarh(height = 0.05, alpha = 0.9, color = "grey") +
+  geom_errorbar(width = 0.05, alpha = 0.9, color = "grey") +
+  geom_text_repel(segment.color = "grey50",
+                  lineheight = 0.9,
+                  size = 4, box.padding = 0.9, max.overlaps = Inf, show.legend = F) +
+  geom_point(pch = 21, color = "black", size = 1.5) +
+  xlab("AD - Delta gradiant (lead vs non_lead variants)") +
+  ylab("non-AD - Delta gradiant (lead vs non_lead variants)") + 
+  scale_fill_distiller(type = "seq", palette = "Reds", direction = 1) +
+  #coord_equal() +
+  theme_cowplot()
+pdf(file = "R_notebook_figures/2025_revision/figure_hicformer_gwas_lead_variant_gradient.scatterplot.pdf", width = 8, height = 4)
+print(panel_gwas_lead_variant_vs_gradient_scatterplot)
+dev.off()
+```
+
+
+############################
+# Clinical trial - new added in the revision -- revision
+# To place our findings in a clinical context, we integrated ClinicalTrials.gov and DrugBank (https://go.drugbank.com/) using an LLM-based agentic framework. 
+# This workflow classifies AD trials into four clinically interpretable categories (e.g., cognitive enhancers, disease-targeted biologics) following a recent Perspective article (Landhuis. Nature 2025; PMID: 40962989) and maps targets to the Common Alzheimer's and Related Dementias Research Ontology (CADRO) mechanisms (e.g., amyloid beta, tau, synaptic plasticity). 
+# This enables direct comparison between current clinical targets and the gene sets prioritized by our 3D chromatin and transcriptome analyses. 
+# The script for the agentic workflow is provided at a sperate files 
+############################
+```{r}
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+# function
+split_gene_set_name <- function(long_string, max_chars = 20) {
+  # Split the string into tokens at dashes (retain segments)
+  tokens <- unlist(strsplit(long_string, "_", perl = TRUE))
+  if (length(tokens) == 0) return("")
+  current_line <- ""
+  result <- character(0)
+  for (token in tokens) {
+    # Check if adding this token would exceed the limit
+    if (nchar(current_line) + nchar(token) <= max_chars) {
+      if (nchar(current_line) == 0) {
+        current_line = token
+      } else {
+        current_line <- paste0(current_line, "_", token)
+      }
+    } else {
+      # Replace the leading dash with "\n" if token starts with "-"
+      result <- c(result, current_line)
+      current_line <- token  # Start new line without the dash
+    }
+  }
+  
+  # Add the final line
+  result <- c(result, current_line)
+  # Combine lines with "\n"
+  final_string <- paste(result, collapse = "\n")
+  return(final_string)
+}
+# load clinical summary file
+data_trial <- read.table(file = "script_custom/clinical_trial/results/AD_clinical_drug_gene_analysis.summary.tsv", header = T, sep = '\t', stringsAsFactors = F)
+data_deg_trial <- read.table(file = "script_custom/clinical_trial/results/AD_clinical_drug_enrichment.analysis.enrichment_results.txt", header = T, sep = '\t', stringsAsFactors = F)
+data_geneset_trial <- read.table(file = "script_custom/clinical_trial/results/AD_clinical_drug_enrichment.analysis_geneset.enrichment_results.txt", header = T, sep = '\t', stringsAsFactors = F)
+# get the top 15 positive/negative genesets
+data_geneset_top_15 <- data_geneset_trial %>%
+  select(gene_set, cor_score, method, group) %>%
+  distinct() %>%
+  arrange(method, group, -abs(cor_score)) %>%
+  group_by(method, group) %>%
+  slice_head(n = 15) %>%
+  rowwise() %>%
+  mutate(gene_set_name = split_gene_set_name(gene_set, 40))
+data_geneset_trial_top_15 <- merge(data_geneset_trial, data_geneset_top_15[, c("gene_set", "method", "group", "gene_set_name")], sort = F)
+# plot the number of target gene per group 
+panel_trial_target_gene_count <- data_trial %>%
+  select(target_category, drug_agent_type, target_gene) %>%
+  distinct() %>%
+  group_by(target_category, drug_agent_type) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x = drug_agent_type, y = count)) +
+  geom_col(fill = "lightgrey", color = "black", width = 0.7) +
+  geom_hline(yintercept = 0, linetype = 1, color = "black") +
+  geom_hline(yintercept = 20, linetype = 2, color = "red") +
+  xlab("") +
+  ylab("Gene Count") +
+  facet_grid(. ~ target_category, scales = "free_y", space = "free_y") +
+  scale_x_discrete(limits = rev) +
+  coord_flip() +
+  theme_cowplot() +
+  theme(strip.background = element_blank()) +
+  theme(strip.text.x = element_text(angle = 0, hjust = 0)) +
+  theme(strip.clip = 'off') +
+  theme(axis.text.x = element_text(hjust = 1, vjust = 1))
+pdf(file = "R_notebook_figures/2025_revision/figure_clinical_trial.target_genes_barplot.pdf", width = 9, height = 7)
+print(panel_trial_target_gene_count)
+dev.off()
+# plot the enrichment of DEG and clinical trials
+data_deg_trial %>%
+  separate_wider_delim(group_label, delim = ';', names = c("trial_category", "trial_target"), cols_remove = F) %>%
+  filter(bg_idx == 0) %>%
+  ggplot(aes(x = cell_type, y = trial_target, fill = p_value, label = ifelse(p_value < 0.05, "*", ""))) +
+  #geom_text(data = test_distance_erosion_smooth_cell_xiong_long, aes(x = bin_group_1, y = bin_group_2, label = ifelse(p_value < 0.05, "*", "")), inherit.aes = FALSE) +
+  geom_tile() +
+  geom_text(size = 12, vjust = 0.8) +
+  xlab("") +
+  ylab("") +
+  facet_grid(trial_category ~ ., space = "free", scales = "free_y") +
+  scale_fill_gradient(low = "red", high = "white") +
+  scale_x_discrete(expand = c(0,0)) +
+  scale_y_discrete(expand = c(0,0)) +
+  theme_cowplot() +
+  theme(strip.background = element_blank()) +
+  theme(strip.text.y = element_text(angle = 0, hjust = 0, face = "bold")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(axis.line = element_blank()) +
+  theme(panel.border= element_rect(color = "black", linewidth = 1)) 
+# plot the enrichment of geneset associated with erosion/mingling score 
+panel_geneset_top_15_enrichment_mingling_score <- data_geneset_trial_top_15 %>%
+  group_by(method, group) %>%
+  separate_wider_delim(group_label, delim = ';', names = c("trial_category", "trial_target"), cols_remove = F) %>%
+  filter(method == "mingling_score") %>%
+  filter(bg_idx == 0) %>%
+  mutate(group = factor(group, levels = c("positive_cor", "negative_cor"))) %>%
+  mutate(gene_set_name = factor(gene_set_name, levels = rev(subset(data_geneset_top_15, method == "mingling_score")$gene_set_name))) %>%
+  ggplot(aes(y = gene_set_name, x = trial_target, fill = p_value, label = ifelse(p_value < 0.05, "*", ""))) +
+  geom_tile() +
+  geom_text(size = 9, vjust = 0.8) +
+  xlab("") +
+  ylab("") +
+  facet_grid(method + group ~ trial_category, space = "free", scales = "free") +
+  scale_fill_gradient(low = "red", high = "white") +
+  scale_x_discrete(expand = c(0,0)) +
+  scale_y_discrete(expand = c(0,0)) +
+  theme_cowplot() +
+  theme(strip.background = element_blank()) +
+  theme(strip.clip = 'off') +
+  theme(strip.text.y = element_text(angle = 90, hjust = 0.5, face = "bold")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 5)) +
+  theme(axis.text.y = element_text(size = 5)) +
+  theme(axis.line = element_blank()) +
+  theme(panel.border= element_rect(color = "black", linewidth = 1)) 
+panel_geneset_top_15_cor_mingling_score <- data_geneset_top_15 %>%
+  filter(method == "mingling_score") %>%
+  mutate(group = factor(group, levels = c("positive_cor", "negative_cor"))) %>%
+   mutate(gene_set_name = factor(gene_set_name, levels = rev(subset(data_geneset_top_15, method == "mingling_score")$gene_set_name))) %>%
+  ggplot(aes(x = gene_set_name, y = cor_score, color = group)) +
+  #geom_col() +
+  geom_segment(aes(x = gene_set_name, xend = gene_set_name, y = 0, yend = cor_score), linewidth = 2, color = "lightgrey") +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = 1, color = "black") +
+  xlab("") +
+  ylab("") +
+  facet_grid(method + group ~ ., space = "free", scales = "free") +
+  scale_color_manual(name = "", values = c("positive_cor" = "firebrick", "negative_cor" = "navyblue")) +
+  coord_flip() +
+  theme_cowplot() +
+  theme(strip.background = element_blank()) +
+  #theme(axis.text.y = element_text(size = 5)) +
+  theme(axis.text.y = element_blank()) +
+  theme(legend.position = "none")
+pdf(file = "R_notebook_figures/2025_revision/figure_clinical_trial.geneset_enrichment.pdf", width = 14, height = 8)
+plot_grid(panel_geneset_top_15_enrichment_mingling_score, panel_geneset_top_15_cor_mingling_score, align = 'h', axis = 'tb', nrow = 1, rel_widths = c(5,1)) 
+dev.off()
+```
+
+
+############################
+# Drug repurpose - new added in the revision -- revision
+# Using the CMap drug signature database, we performed in silico drug repurposing analysis based on the top K gene sets associated with chromatin mingling score changes.
+############################
+```{r}
+library(ccdata)
+library(ccmap)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(cowplot)
+library(lsa) # for cosine similarity calculation
+library(parallel)
+library(doParallel)
+library(foreach)
+library(Rcpp)
+library(future.apply)
+# load the drug signature from ccdata
+data(cmap_es)
+data(l1000_es)
+# get the gene list in cmap
+gene_list_complete_cmap <- row.names(cmap_es)
+gene_list_complete_l1000 <- row.names(l1000_es)
+# load the gene set related to mingling score 
+data_gene_set_mingling_negative <- read.table(file = "/work/magroup/yangz6/AD_project/results/202501/gene_expr/gene_set_vs_mingling_negative_cor.tsv", sep = '\t', header = T, stringsAsFactors = F)
+data_gene_set_mingling_positive <- read.table(file = "/work/magroup/yangz6/AD_project/results/202501/gene_expr/gene_set_vs_mingling_positive_cor.tsv", sep = '\t', header = T, stringsAsFactors = F)
+# get the top K gene set by the correlation score
+K = 10
+data_gene_set_top_k_neg <- data_gene_set_mingling_negative %>%
+  select(gene_set, cor_score) %>%
+  distinct() %>%
+  arrange(cor_score) %>%
+  slice_head(n = K)
+data_gene_set_top_k_pos <- data_gene_set_mingling_positive %>%
+  select(gene_set, cor_score) %>%
+  distinct() %>%
+  arrange(cor_score) %>%
+  slice_head(n = K)
+data_gene_set_top_k_neg_gene_list <- unique(subset(data_gene_set_mingling_negative, gene_set %in% data_gene_set_top_k_neg$gene_set)$gene_name)
+data_gene_set_top_k_pos_gene_list <- unique(subset(data_gene_set_mingling_positive, gene_set %in% data_gene_set_top_k_pos$gene_set)$gene_name)
+cat(paste0("Number of genes negatively corrleated with mingling score is ", length(data_gene_set_top_k_neg_gene_list), '\n'))
+cat(paste0("Number of genes positively corrleated with mingling score is ", length(data_gene_set_top_k_pos_gene_list), '\n'))
+# get the number of genes overlaps with CMAP or L1000, that is the theoretically upper bound
+data_gene_set_top_k_neg_gene_list_clean <- intersect(data_gene_set_top_k_neg_gene_list, gene_list_complete_cmap)
+data_gene_set_top_k_pos_gene_list_clean <- intersect(data_gene_set_top_k_pos_gene_list, gene_list_complete_cmap)
+cat(paste0("Number of genes negatively corrleated with mingling score after intersection with CMAP is ", length(data_gene_set_top_k_neg_gene_list_clean), '\n'))
+cat(paste0("Number of genes positively corrleated with mingling score after intersection with CMAP is ", length(data_gene_set_top_k_pos_gene_list_clean), '\n'))
+# combine positive and negative correlated genes
+data_gene_set_top_k_merged_gene_list_clean <- unique(c(data_gene_set_top_k_neg_gene_list_clean, data_gene_set_top_k_pos_gene_list_clean))
+cat(paste0("Final top K gene set genes count is ", length(data_gene_set_top_k_merged_gene_list_clean), '\n'))
+# Final top K gene set genes count is 2249
+# for each cell type load the DEG 
+cell_type_list = c("Astro", "Endo", "Exc", "Inh", "Micro", "Oligo", "OPC", "VLMC", "Exc L2-3 IT", "Exc L4 IT", "Exc L5-6 NP", "Exc L5 ET", "Exc L5 IT", "Exc L6 CT", "Exc L6 IT Car3", "Inh Chandelier", "Inh Lamp5", "Inh PAX6", "Inh Pvalb", "Inh Sncg", "Inh Sst", "Inh Vip")
+cutoff_adj_pval = 0.05
+data_deg <- data.frame()
+for (cell_type in cell_type_list) {
+  if (cell_type %in% c("Astro", "Endo", "Exc", "Inh", "Micro", "Oligo", "OPC", "VLMC")) {
+    tmp <- read.table(paste0("/work/magroup/yangz6/AD_project/results/202501/gene_expr/DEG_results/all/major_cell_type/", cell_type, "-AD-vs-CT-MAST.csv"), sep = ',', header = T, stringsAsFactors = F)
+  } else {
+    tmp <- read.table(paste0("/work/magroup/yangz6/AD_project/results/202501/gene_expr/DEG_results/all/sub_cell_type/", cell_type, "-AD-vs-CT-MAST.csv"), sep = ',', header = T, stringsAsFactors = F)
+  }
+  
+  colnames(tmp) <- c("gene_name", "pval", "log2FC", "pct_1", "pct_2", "adj_pval")
+  tmp$cell_type <- cell_type
+  # filtering
+  tmp <- tmp %>%
+    filter(adj_pval < cutoff_adj_pval) %>%
+    mutate(direction = ifelse(log2FC > 0, 'Up', 'Down'))
+  data_deg <- rbind(data_deg, tmp)
+  cat(paste0("load ", cell_type, " done", '\n'))
+}
+# get the summary of gene count
+cutoff_log2FC = 0.4
+panel_deg_count_cmap <- data_deg %>%
+  #filter(gene_name %in% gene_list_complete_cmap) %>%
+  #filter(gene_name %in% gene_list_complete_l1000) %>%
+  filter(gene_name %in% data_gene_set_top_k_merged_gene_list_clean) %>%
+  filter(abs(log2FC) > cutoff_log2FC) %>%
+  mutate(direction = factor(direction, levels = c("Up", "Down"))) %>%
+  group_by(cell_type, direction, .drop = FALSE) %>%
+  summarise(gene_count = n()) %>%
+  filter(cell_type %in% c("Astro", "Endo", "Exc", "Inh", "Micro", "Oligo", "OPC", "VLMC")) %>%
+  ggplot(aes(x = cell_type, y = gene_count, fill = direction)) +
+  geom_hline(yintercept = 0.0, linetype = 1, color = "black") +
+  geom_col(position = position_dodge(0.9), width = 0.7, color = "black") +
+  geom_text(aes(label = gene_count, y = gene_count + 6), vjust = -0.5, position = position_dodge(0.9)) +
+  xlab("") +
+  ylab("Gene count") +
+  ggtitle("DEG count (overlap with CMap and top-K gene set)") +
+  scale_fill_manual(name = "", values = c("Up" = "#fb8072", "Down" = "#80b1d3")) +
+  scale_y_continuous(expand = c(0,0)) +
+  coord_cartesian(ylim = c(0, 140)) +
+  theme_cowplot()
+panel_deg_count_l1000 <- data_deg %>%
+  #filter(gene_name %in% gene_list_complete_cmap) %>%
+  filter(gene_name %in% gene_list_complete_l1000) %>%
+  filter(gene_name %in% data_gene_set_top_k_merged_gene_list_clean) %>%
+  filter(abs(log2FC) > cutoff_log2FC) %>%
+  mutate(direction = factor(direction, levels = c("Up", "Down"))) %>%
+  group_by(cell_type, direction, .drop = FALSE) %>%
+  summarise(gene_count = n()) %>%
+  filter(cell_type %in% c("Astro", "Endo", "Exc", "Inh", "Micro", "Oligo", "OPC", "VLMC")) %>%
+  ggplot(aes(x = cell_type, y = gene_count, fill = direction)) +
+  geom_hline(yintercept = 0.0, linetype = 1, color = "black") +
+  geom_col(position = position_dodge(0.9), width = 0.7, color = "black") +
+  geom_text(aes(label = gene_count, y = gene_count + 1), vjust = -0.5, position = position_dodge(0.9)) +
+  xlab("") +
+  ylab("Gene count") +
+  ggtitle("DEG count (overlap with L1000 and top-K gene set)") +
+  scale_fill_manual(name = "", values = c("Up" = "#fb8072", "Down" = "#80b1d3")) +
+  scale_y_continuous(expand = c(0,0)) +
+  coord_cartesian(ylim = c(0, 20)) +
+  theme_cowplot()
+pdf(file = "R_notebook_figures/2025_revision/figure_drug_repurpose.DEG_count.top10_gene_set.pdf", width = 10, height = 8)
+plot_grid(panel_deg_count_cmap, panel_deg_count_l1000, align = 'v', axis = 'lr', ncol = 1) 
+dev.off()
+
+# fast cosine calculation
+sourceCpp("src/cosine_rcpp.cpp")
+x <- rnorm(1000)
+y <- rnorm(1000)
+fast_cosine(x, y)
+cosine(x, y)
+# query drug by differenetial signature
+query_drug_signature <- function (query_genes, drug_info = c("cmap", "l1000"), sorted = TRUE, ngenes = 200, path = NULL, sim_method = "cosine") 
+{
+    gslist = gs.names = NULL
+    if (is.character(drug_info)) {
+        fname <- paste0(drug_info[1], "_es")
+        utils::data(list = fname, package = "ccdata", envir = environment())
+        drug_info <- get(fname)
+        rm(list = fname)
+    }
+    if (!is.null(path)) {
+        utils::data("gslist", "gs.names", package = "crossmeta", 
+            envir = environment())
+        path_num <- names(gs.names)[gs.names == path]
+        path_sym <- unique(names(gslist[[path_num]]))
+        drug_info <- drug_info[row.names(drug_info) %in% path_sym, 
+            ]
+    }
+    query_genes <- query_genes[names(query_genes) %in% row.names(drug_info)]
+    top_ngenes <- utils::head(names(sort(abs(query_genes), TRUE)), 
+        ngenes)
+    query_genes <- query_genes[top_ngenes]
+    drug_info <- drug_info[names(query_genes), , drop = FALSE]
+    if (sim_method == "pearson") {
+      sim <- stats::cor(query_genes, drug_info, method = "pearson")
+      sim <- structure(c(sim), names = colnames(sim))
+    } else if (sim_method == "cosine") {
+      sim <- lsa::cosine(query_genes, drug_info)
+    } else {
+      cat(paste0("Unknown method ", sim_method, '\n'))
+      return(0)
+    }
+    if (sorted) {
+        return(sort(sim, decreasing = TRUE))
+    }
+    else {
+        return(sim)
+    }
+}
+# 
+top_gene = 200
+data_single_drug_effect <- data.frame()
+for (database in c("cmap", "l1000")) {
+  for (cell_type_name in c("Astro", "Endo", "Exc", "Inh", "Micro", "Oligo", "OPC", "VLMC")) {
+    tmp <-  data_deg %>%
+      filter(gene_name %in% data_gene_set_top_k_merged_gene_list_clean) %>%
+      filter(cell_type == cell_type_name) %>%
+      filter(abs(log2FC) > cutoff_log2FC) %>%
+      slice_head(n = top_gene)
+    if (nrow(tmp) < 1) {
+      next
+    }
+    tmp_gene_sig <- tmp$log2FC
+    names(tmp_gene_sig) <- tmp$gene_name
+    if (database == "cmap") {
+      tmp_res <- query_drug_signature(tmp_gene_sig, cmap_es, sorted = T, ngenes = top_gene, sim_method = "cosine")
+      gene_count =  length(tmp_gene_sig[names(tmp_gene_sig) %in% row.names(cmap_es)])
+    } else if (database == 'l1000') {
+      tmp_res <- query_drug_signature(tmp_gene_sig, l1000_es, sorted = T, ngenes = top_gene, sim_method = "cosine")
+      gene_count =  length(tmp_gene_sig[names(tmp_gene_sig) %in% row.names(l1000_es)])
+    }
+    if (length(tmp_res) < 1) {
+      next
+    }
+    tmp_res <- data.frame(sim = tmp_res, drug = names(tmp_res))
+    tmp_res$cell_type <- cell_type_name
+    tmp_res$database <- database
+    tmp_res$gene_count <- gene_count
+    data_single_drug_effect <- rbind(data_single_drug_effect, tmp_res)
+    cat(paste0("Query ", cell_type_name, " in ", database, " done.", '\n'))
+  }
+}
+# 
+data_single_drug_effect_top_hit <- data_single_drug_effect %>%
+  filter(sim < 0) %>%
+  group_by(database, cell_type) %>%
+  slice_tail(n = 100) %>%
+  group_by(database, cell_type) %>%
+  arrange(sim, .by_group = TRUE)
+# add FDR
+set.seed(202510)
+data_single_drug_effect_fdr <- data.frame()
+for (row_idx in seq(nrow(data_single_drug_effect_top_hit))) {
+  drug_name = unlist(data_single_drug_effect_top_hit[row_idx, "drug"])
+  cell_type_name = unlist(data_single_drug_effect_top_hit[row_idx, "cell_type"])
+  database_name = unlist(data_single_drug_effect_top_hit[row_idx, "database"])
+  sim_obv = unlist(data_single_drug_effect_top_hit[row_idx, "sim"])
+  gene_count_drug = unlist(data_single_drug_effect_top_hit[row_idx, "gene_count"])
+  # get the gene list
+  tmp <-  data_deg %>%
+      filter(gene_name %in% data_gene_set_top_k_merged_gene_list_clean) %>%
+      filter(cell_type == cell_type_name) %>%
+      filter(abs(log2FC) > cutoff_log2FC) %>%
+      slice_head(n = top_gene)
+  tmp_gene_sig <- tmp$log2FC
+  names(tmp_gene_sig) <- tmp$gene_name
+  # get the expected sim list using permutation
+  if (database_name == "cmap") {
+    tmp_gene_sig = tmp_gene_sig[names(tmp_gene_sig) %in% row.names(cmap_es)]
+    drug_sig = cmap_es[names(tmp_gene_sig), drug_name]
+  } else if (database_name == 'l1000') {
+    tmp_gene_sig = tmp_gene_sig[names(tmp_gene_sig) %in% row.names(l1000_es)]
+    drug_sig = l1000_es[names(tmp_gene_sig), drug_name]
+  }
+  sim_bg_list <- c()
+  for (idx in seq(1, 400)) {
+    # get permutated gene sig
+    tmp_gene_permut_sig <- tmp_gene_sig
+    tmp_gene_permut_sig <- sample(tmp_gene_permut_sig)
+    names(tmp_gene_permut_sig) <- names(tmp_gene_sig)
+    # calculate cosine sim
+    sim_score = fast_cosine(tmp_gene_permut_sig, drug_sig)
+    sim_bg_list <- c(sim_bg_list, sim_score)
+  }
+  # empirically FDR
+  fdr = sum(sim_bg_list < sim_obv)/length(sim_bg_list)
+  tmp <- data.frame(drug = drug_name, cell_type = cell_type_name, database = database_name, gene_count = gene_count_drug, sim = sim_obv, fdr = fdr)
+  # 
+  data_single_drug_effect_fdr <- rbind(data_single_drug_effect_fdr, tmp)
+  #cat(paste0("Row ", row_idx, " done.", '\n'))
+}
+# save results
+write.table(data_single_drug_effect_fdr, file = paste0("results/202507/drug_repurpose.top", K, ".log2FC_", cutoff_log2FC, ".tsv"), sep = '\t', row.names = F, col.names = T)
+data_single_drug_effect_fdr <- read.table(file = "results/202507/drug_repurpose.top10.log2FC_0.4.tsv", sep = '\t', col.names = T, stringsAsFactors = F)
+# select drugs that appears in more than two cell types and drugs that work in single cell type (top-K)
+data_single_drug_effect_fdr_cross_cell_type <- data_single_drug_effect_fdr %>%
+  filter(database == "cmap") %>%
+  filter(sim < -0.2) %>%
+  filter(fdr < 0.05) %>%
+  filter(cell_type %in% c("Astro", "Exc", "Inh", "Oligo")) %>%
+  group_by(drug) %>%
+  mutate(cell_type_count = n(), ave_sim = median(sim)) %>%
+  arrange(-cell_type_count) %>%
+  filter(cell_type_count >= 2) %>%
+  #select(sim, drug, cell_type, ave_sim) %>%
+  filter(!grepl("^\\d+", drug)) %>%
+  arrange(ave_sim)
+data_single_drug_effect_fdr_single_cell_type <- data_single_drug_effect_fdr %>%
+  filter(database == "cmap") %>%
+  filter(sim < -0.2) %>%
+  filter(fdr < 0.05) %>%
+  filter(cell_type %in% c("Astro", "Exc", "Inh", "Oligo")) %>%
+  filter(!grepl("^\\d+", drug)) %>%
+  group_by(drug) %>%
+  mutate(cell_type_count = n(), ave_sim = median(sim)) %>%
+  filter(cell_type_count == 1) %>%
+  group_by(cell_type) %>%
+  arrange(sim, .by_group = T) %>%
+  slice_head(n = 10)
+# plot graph
+data_single_drug_effect_fdr_graph <- rbind(data_single_drug_effect_fdr_cross_cell_type, data_single_drug_effect_fdr_single_cell_type)
+data_single_drug_effect_fdr_graph <- data_single_drug_effect_fdr_graph %>%
+  select(drug, cell_type, sim, fdr, cell_type_count) %>%
+  arrange(cell_type, drug)
+data_single_drug_effect_fdr_graph_flat <- data_single_drug_effect_fdr_graph %>%
+  select(drug, cell_type) %>%
+  mutate(edge = 1) %>%
+  pivot_wider(names_from = "cell_type", values_from = "edge", values_fill = 0)
+data_single_drug_effect_fdr_matrix <- as.matrix(data_single_drug_effect_fdr_graph_flat[, 2:ncol(data_single_drug_effect_fdr_graph_flat)])
+row.names(data_single_drug_effect_fdr_matrix) <- data_single_drug_effect_fdr_graph_flat$drug
+# create the igraph object
+g <- graph_from_biadjacency_matrix(data_single_drug_effect_fdr_matrix)
+# Add type labels: TRUE for cell types, FALSE for drugs
+V(g)$type <- ifelse(bipartite_mapping(g)$type, "cell_type", "drug")
+# Iterate through each row and set edge attribute
+for (i in seq_len(nrow(data_single_drug_effect_fdr_graph))) {
+  drug <- data_single_drug_effect_fdr_graph$drug[i]
+  cell <- data_single_drug_effect_fdr_graph$cell_type[i]
+  fdr_value  <- data_single_drug_effect_fdr_graph$fdr[i]
+  sim_score  <- data_single_drug_effect_fdr_graph$sim[i]
+  eid <- get_edge_ids(g, c(drug, cell))
+  if (eid != 0) {
+    E(g)[eid]$fdr <- fdr_value
+    E(g)[eid]$sim <- sim_score
+  }
+}
+# write the
+write_graph(g, "R_notebook_figures/2025_revision/drug_repurpose.top10.log2FC_0.4.graphml", format = "graphml")
+# the following script is an exmaple to sanity the graph, I used Cytoscape for the final edits of the graph
+# create a node feature dataframe
+node_list = V(g)$name
+data_node_feature <- data.frame(node = node_list)
+data_node_feature <- merge(data_node_feature, data_single_drug_effect_fdr_graph %>% select(drug, cell_type_count) %>% distinct(), by.x = "node", by.y = "drug", sort = F, all.x = T)
+data_node_feature <- data_node_feature %>%
+  mutate(node = factor(node, levels = node_list)) %>%
+  arrange(node)
+# add features to the nodes
+V(g)$cell_type_count = data_node_feature$cell_type_count
+
+# 
+layout <- layout_nicely(g)
+plot(g, layout = layout, vertex.size = 20)
+#
+n = ggnetwork(g, weights = "sim")
+ggplot(n, aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_edges(aes(linetype = type, linewidth = sim), color = "grey50") +
+  geom_nodes(aes(color = factor(cell_type_count)), size = 5) +
+  theme_blank()
+
+
+
+# plot heatmap
+data_single_drug_cross_cell_type_order <- data_single_drug_effect_fdr_cross_cell_type %>%
+  select(drug, ave_sim, cell_type_count) %>%
+  distinct() %>%
+  arrange(ave_sim)
+panel_drug_repurpose_cross_type <- data_single_drug_effect_fdr_cross_cell_type %>%
+  ungroup() %>%
+  select(drug, cell_type, sim) %>%
+  complete(drug, cell_type) %>%
+  mutate(drug = factor(drug, level = rev(data_single_drug_cross_cell_type_order$drug))) %>%
+  ggplot(aes(x = cell_type, y = drug, fill = sim, label = round(sim, 2))) +
+  geom_tile(color = "black", linewidth = 0.5) +
+  geom_text() +
+  xlab("") +
+  ylab("") +
+  #scale_fill_fermenter(type = "seq", palette = "Reds", direction = -1) +
+  scale_fill_gradient(name = "", low = "red", high = "white", limits = c(-0.6, -0.2), oob = scales::squish, na.value = "white") +
+  scale_y_discrete(expand = c(0,0)) +
+  scale_x_discrete(expand = c(0,0)) +
+  theme_cowplot() +
+  theme(panel.border = element_rect(color = "black", linewidth = 0.5))
+pdf(file = "R_notebook_figures/2025_revision/figure_drug_repurpose.cosine_sim.cross_cell_type.pdf", width = 6, height = 12)
+print(panel_drug_repurpose_cross_type)
+dev.off()
+
+
+### not used
+# use permutation to calculate the distribution of sim score
+set.seed(202510)
+# Set up cluster
+n_cores <- 48
+cl <- makeCluster(n_cores)
+registerDoParallel(cl)
+# Parameters
+permute_list <- seq(1, 100)
+database_list <- c("cmap", "l1000")
+cell_type_list <- c("Astro", "Endo", "Exc", "Inh", "Micro", "Oligo", "OPC", "VLMC")
+# Parallel loop
+log_file <- "R_parallel_log.txt"
+if (file.exists(log_file)) file.remove(log_file)
+data_single_drug_effect_permute <- foreach(
+  permute_idx = permute_list,
+  .combine = rbind,
+  .packages = c("dplyr")
+) %:%
+  foreach(
+    database = database_list,
+    .combine = rbind,
+    .packages = c("dplyr")
+  ) %:%
+  foreach(
+    cell_type_name = cell_type_list,
+    .combine = rbind,
+    .packages = c("dplyr")
+  ) %dopar% {
+    
+    tmp <- data_deg %>%
+      filter(gene_name %in% data_gene_set_top_k_merged_gene_list_clean) %>%
+      filter(cell_type == cell_type_name) %>%
+      slice_head(n = top_gene)
+    
+    if (nrow(tmp) < 1) return(NULL)
+    
+    tmp_gene_sig <- tmp$log2FC
+    # permute tmp_gene_sig
+    tmp_gene_sig <- sample(tmp_gene_sig)
+    names(tmp_gene_sig) <- tmp$gene_name
+    
+    if (database == "cmap") {
+      tmp_res <- query_drug_signature(tmp_gene_sig, database, sorted = T, ngenes = top_gene, sim_method = "cosine")
+    } else if (database == 'l1000') {
+      tmp_res <- query_drug_signature(tmp_gene_sig, database, sorted = T, ngenes = top_gene, sim_method = "cosine")
+    }
+    
+    if (length(tmp_res) < 1) return(NULL)
+    
+    tmp_res <- data.frame(sim = tmp_res, drug = names(tmp_res))
+    tmp_res$cell_type <- cell_type_name
+    tmp_res$database <- database
+    tmp_res$gene_count <- length(tmp_gene_sig)
+    tmp_res$permute_idx <- permute_idx
+    # 
+    cat(paste0("Permution ", permute_idx, " in ", cell_type_name, " using ", database, " done", '\n'), file = log_file, append = TRUE)
+    #
+    tmp_res
+  }
+# Stop cluster
+stopCluster(cl)
+
 ```
 

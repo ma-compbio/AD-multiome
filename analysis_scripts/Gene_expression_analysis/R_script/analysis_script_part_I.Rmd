@@ -681,3 +681,174 @@ dev.off()
 # save the results
 write.table(data_result_agg_expr_final_sub_selected, file = "R_notebook_figures/2025_Feb/figure_geneset_gene_expr_heatmap.table.tsv", sep = '\t', row.names = F, col.names = T, quote = F)
 ```
+
+
+############################
+# Gene set leave-one-out analysis -- revision
+# In the revision, we want to check whether the gene set score chagnes are driven by few genes or the overall gene set.
+# We performed leave-one-out experiment to check the robustness of the gene set score changes.
+############################
+```{r}
+library(Seurat)
+library(Matrix)
+library(AUCell)
+library(GSEABase)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(cowplot)
+library(zoo)
+# load cell annotation
+data_cell_anno <- read.table(file = "results/202501/cell_meta_table.tsv", header = T, sep = '\t', stringsAsFactors = F)
+cell_type_list_major <- c("Astro", "Endo", "Exc", "Inh", "Oligo", "OPC", "Micro", "VLMC")
+cell_type_list_sub <- c("Astro", "Endo", "Exc L2/3 IT",  "Exc L4 IT", "Exc L5 IT", "Exc L5/6 NP", "Exc L6 CT", "Exc L6 IT Car3", "Exc L6b", "Inh Chandelier", "Inh Lamp5", "Inh PAX6", "Inh Pvalb", "Inh Sncg", "Inh Sst", "Inh Vip", "Oligo", "OPC", "Micro", "VLMC")
+# define intersting geneset
+# group important geneset/pathways
+gene_set_group_literature_Astro <- c("AD_Astro_Cell_death_oxygen_UP", "AD_Astro_Lipid_storage_UP", "AD_Astro_Angiogenesis_DOWN")
+gene_set_group_literature_Neuron <- c("AD_neuron_Mito_UP", "AD_neuron_Meta_of_RNA_UP", "AD_neuron_MIB_DOWN", "AD_neuron_Meta_of_lipid_DOWN", "AD_neuron_Mito_Oxph_DOWN", "AD_neuron_Mito_tRNA_DOWN", "AD_neuron_Mito_translation_DOWN", "AD_neuron_Synaptic_DOWN")
+gene_set_mRNA_splicing <- c("REACTOME_MRNA_SPLICING")
+gene_set_group_lipid_metabolism_Oxidations <- c("KEGG_OXIDATIVE_PHOSPHORYLATION", "REACTOME_METABOLISM_OF_LIPIDS" , "REACTOME_FREE_FATTY_ACIDS_REGULATE_INSULIN_SECRETION", "REACTOME_FATTY_ACIDS_BOUND_TO_GPR40_FFAR1_REGULATE_INSULIN_SECRETION", "REACTOME_BETA_OXIDATION_OF_VERY_LONG_CHAIN_FATTY_ACIDS", "REACTOME_BIOLOGICAL_OXIDATIONS")
+gene_set_group_neurual_system <- c("REACTOME_NERVOUS_SYSTEM_DEVELOPMENT", "REACTOME_NEURONAL_SYSTEM", "REACTOME_TRANSMISSION_ACROSS_CHEMICAL_SYNAPSES", "REACTOME_PROTEIN_PROTEIN_INTERACTIONS_AT_SYNAPSES")
+gene_set_group_neurotransmitter <- c("REACTOME_DOPAMINE_NEUROTRANSMITTER_RELEASE_CYCLE", "REACTOME_SEROTONIN_NEUROTRANSMITTER_RELEASE_CYCLE", "REACTOME_GLUTAMATE_NEUROTRANSMITTER_RELEASE_CYCLE")
+gene_set_group_ion <- c("REACTOME_ORGANIC_CATION_TRANSPORT", "REACTOME_VOLTAGE_GATED_POTASSIUM_CHANNELS", "REACTOME_POTASSIUM_CHANNELS")
+gene_set_calcineurin <- c("KEGG_MEDICUS_PATHOGEN_HCMV_US28_TO_GNAQ_PLCB_G_CALCINEURIN_SIGNALING_PATHWAY", "KEGG_MEDICUS_REFERENCE_CXCR4_GNAQ_PLCB_G_CALCINEURIN_SIGNALING_PATHWAY", "BIOCARTA_CALCINEURIN_PATHWAY")
+gene_set_other_pathway <- c("KEGG_MEDICUS_REFERENCE_GLYCOLYSIS", "REACTOME_REGULATION_OF_GENE_EXPRESSION_BY_HYPOXIA_INDUCIBLE_FACTOR", "KEGG_MEDICUS_REFERENCE_MGLUR5_CA2_APOPTOTIC_PATHWAY", "REACTOME_SIGNALING_BY_VEGF")
+gene_set_group_disease <- c("KEGG_PARKINSONS_DISEASE", "BLALOCK_ALZHEIMERS_DISEASE_UP", "BLALOCK_ALZHEIMERS_DISEASE_DN", "WP_ALZHEIMERS_DISEASE", "KEGG_ALZHEIMERS_DISEASE")
+gene_set_summary <- data.frame(gene_set = c(gene_set_group_literature_Astro, 
+                                            gene_set_group_literature_Neuron, 
+                                            gene_set_mRNA_splicing, 
+                                            gene_set_group_lipid_metabolism_Oxidations, 
+                                            gene_set_group_neurual_system, 
+                                            gene_set_group_neurotransmitter, 
+                                            gene_set_group_ion, 
+                                            gene_set_calcineurin, 
+                                            gene_set_other_pathway,
+                                            gene_set_group_disease),
+                               gene_set_label = c(rep("Astro (Sadick et al Neuron 2022)", length(gene_set_group_literature_Astro)),
+                                                   rep("Neuron (Mathys et al Cell 2023)", length(gene_set_group_literature_Neuron)),
+                                                   rep("mRNA splicing", length(gene_set_mRNA_splicing)),
+                                                   rep("Lilip metabolism and oxidation", length(gene_set_group_lipid_metabolism_Oxidations)),
+                                                   rep("Nervous system", length(gene_set_group_neurual_system)),
+                                                   rep("Neurotransmitter", length(gene_set_group_neurotransmitter)),
+                                                   rep("Ion channels", length(gene_set_group_ion)),
+                                                   rep("Calcineurin", length(gene_set_calcineurin)),
+                                                   rep("Other pathway", length(gene_set_other_pathway)),
+                                                   rep("AD related disease", length(gene_set_group_disease))
+                               ))
+# load AUCell results
+set.seed(202512)
+data_result_key_geneset <- data.frame()
+for (cell_type_label in c("Astro", "Endo", "Exc L2/3 IT", "Exc L4 IT", "Exc L5 IT", "Exc L5/6 NP", "Exc L6 CT", "Exc L6 IT Car3", "Exc L6b", "Inh Chandelier", "Inh Lamp5", "Inh PAX6", "Inh Pvalb", "Inh Sncg", "Inh Sst", "Inh Vip", "Oligo", "OPC", "Micro", "VLMC")) {
+  
+  load(paste0("results/202501/gene_expr/AUCell/cell_AUC.", gsub('[ /]', '_', cell_type_label),  ".Rdata"))
+  data_result <- getAUC(cells_AUC)
+  data_result <- as.data.frame(data_result)
+  data_result$gene_set <- rownames(data_result)
+  data_result <- data_result %>%
+    pivot_longer(cols = starts_with("hPFC"), names_to = "cell_id", values_to = "score")
+  # load pre-computed AUCell test result
+  tmp_test <- read.table(file = paste0("results/202501/gene_expr/AUCell/result_agg.", gsub('[ /]', '_', cell_type_label), ".tsv"), sep = '\t', header = T, stringsAsFactors = F)
+  tmp_test <- tmp_test %>%
+    mutate(gene_set = gsub(' .*', '', gene_set)) %>%
+    filter(wilcox_test_p_value < 0.05)
+  # filter gene set
+  data_result_filtered <- data_result %>%
+    mutate(gene_set = gsub(' .*', '', gene_set)) %>%
+    filter(gene_set %in% tmp_test$gene_set) 
+    #filter(grepl("KEGG_|REACTOME_|AD_", gene_set))
+    #filter(gene_set %in% gene_set_summary$gene_set)
+  # merge result with cell annotation
+  data_result_filtered <- merge(data_result_filtered, data_cell_anno[, c("cell_id", "projid", "disease_group", "gender", "sub", "major")], by = "cell_id", sort = F)
+  # get the original result
+  data_ratio_origin <- data_result_filtered %>%
+    ungroup() %>%
+    group_by(gene_set, disease_group) %>%
+    summarise(score_ave = mean(score, na.rm = T)) %>%
+    pivot_wider(names_from = "disease_group", values_from = "score_ave") %>%
+    mutate(log2_ratio = log2((AD+1e-4)/(CT+1e-4)))
+  # perform saturation analysis
+  sample_fraction_list=seq(0, 1, 0.02)
+  # cell list
+  data_cell <- data_result_filtered %>%
+    dplyr::select(cell_id, disease_group) %>%
+    distinct()
+  for (sample_fraction_rate in sample_fraction_list) {
+    cell_id_sample <- data_cell %>%
+      group_by(disease_group) %>%
+      slice_sample(prop = sample_fraction_rate)
+    # if there is less than three cells per group, skip
+    if (nrow(subset(cell_id_sample, disease_group == 'AD')) <= 3 & nrow(subset(cell_id_sample, disease_group == 'CT')) <= 3) {
+      next
+    }
+    data_ratio_sample <- data_result_filtered %>%
+      filter(cell_id %in% cell_id_sample$cell_id) %>%
+      group_by(gene_set, disease_group) %>%
+      summarise(score_ave = mean(score, na.rm = T)) %>%
+      pivot_wider(names_from = "disease_group", values_from = "score_ave") %>%
+      mutate(log2_ratio = log2((AD+1e-4)/(CT+1e-4)))
+    # merge
+    data_ratio_sample <- merge(data_ratio_sample, data_ratio_origin[, c("gene_set", "log2_ratio")], by = "gene_set", suffix = c(".sample", ".original"), sort = F)
+    # calculate the correlation
+    result_pearson <- cor(data_ratio_sample$log2_ratio.sample, data_ratio_sample$log2_ratio.original, method = "pearson", use = "complete.obs")
+    result_spearman <- cor(data_ratio_sample$log2_ratio.sample, data_ratio_sample$log2_ratio.original, method = "spearman", use = "complete.obs")
+    # 
+    tmp_result <- data.frame(cell_type = cell_type_label, 
+                             sample_frac = sample_fraction_rate, 
+                             n_cell = nrow(cell_id_sample)/2, 
+                             n_geneset = length(unique(tmp_test$gene_set)),
+                             pearson = result_pearson, 
+                             spearman = result_spearman)
+    # merge with result
+    data_result_key_geneset <- rbind(data_result_key_geneset, tmp_result)
+    cat(paste0("process ", cell_type_label, " at sample rate ", sample_fraction_rate, " done. ", '\n'))
+  }
+}
+
+# plot results
+panel_gene_set_saturation_pearson <- data_result_key_geneset %>%
+  group_by(cell_type) %>%
+  arrange(sample_frac, .by_group = T) %>%
+  mutate(pearson_smooth = rollmean(pearson, k = 5, fill = NA),
+         spearman_smooth = rollmean(spearman, k = 5, fill = NA)) %>%
+  ggplot(aes(x = sample_frac, y = pearson_smooth, color = cell_type)) +
+  geom_line() +
+  geom_hline(yintercept = 0.8, linetype = 2) +
+  geom_point() +
+  xlab("Down-sampling rate") +
+  ylab("Pearson correlation (rollmean k = 5)") +
+  #scale_x_continuous(trans = "log10") +
+  scale_color_manual(name = "", values = c("Astro" = "#665d48", "Endo" = "#8e6c62", "Exc L2/3 IT" = "#b4d335", "Exc L4 IT" = "#61c4b2", 
+                                          "Exc L5 ET" = "#0c5b79", "Exc L5 IT" = "#4eb2ad", "Exc L5/6 NP" = "#3c9e64", "Exc L6 CT" = "#2d8db9", 
+                                          "Exc L6 IT" = "#a19935", "Exc L6 IT Car3" = "#5352a3", "Exc L6b" = "#6f4a9e", 
+                                          "Inh Chandelier" = "#e94b9b", "Inh Lamp5" = "#da808d", "Inh PAX6" = "#702b8b", "Inh Pvalb" = "#d93037", 
+                                          "Inh Sncg" = "#b57bb5", "Inh Sst" = "#f8981d", "Inh Vip" = "#9a62a8",  
+                                          "Micro" = "#95ae96", "Oligo" = "#53776c", "OPC" = "#384a46", "VLMC" = "#6b7257",
+                                          "Exc-Lowexpr" = "#b3cde3", "Oligo-Lowexpr" = "#fbb4ae")) +
+  scale_x_continuous(labels = scales::percent) +
+  theme_cowplot()
+panel_gene_set_saturation_spearman <- data_result_key_geneset %>%
+  group_by(cell_type) %>%
+  arrange(sample_frac, .by_group = T) %>%
+  mutate(pearson_smooth = rollmean(pearson, k = 5, fill = NA),
+         spearman_smooth = rollmean(spearman, k = 5, fill = NA)) %>%
+  ggplot(aes(x = sample_frac, y = spearman_smooth, color = cell_type)) +
+  geom_line() +
+  geom_hline(yintercept = 0.8, linetype = 2) +
+  geom_point() +
+  xlab("Down-sampling rate") +
+  ylab("Spearman correlation (rollmean k = 5)") +
+  #scale_x_continuous(trans = "log10") +
+  scale_color_manual(name = "", values = c("Astro" = "#665d48", "Endo" = "#8e6c62", "Exc L2/3 IT" = "#b4d335", "Exc L4 IT" = "#61c4b2", 
+                                          "Exc L5 ET" = "#0c5b79", "Exc L5 IT" = "#4eb2ad", "Exc L5/6 NP" = "#3c9e64", "Exc L6 CT" = "#2d8db9", 
+                                          "Exc L6 IT" = "#a19935", "Exc L6 IT Car3" = "#5352a3", "Exc L6b" = "#6f4a9e", 
+                                          "Inh Chandelier" = "#e94b9b", "Inh Lamp5" = "#da808d", "Inh PAX6" = "#702b8b", "Inh Pvalb" = "#d93037", 
+                                          "Inh Sncg" = "#b57bb5", "Inh Sst" = "#f8981d", "Inh Vip" = "#9a62a8",  
+                                          "Micro" = "#95ae96", "Oligo" = "#53776c", "OPC" = "#384a46", "VLMC" = "#6b7257",
+                                          "Exc-Lowexpr" = "#b3cde3", "Oligo-Lowexpr" = "#fbb4ae")) +
+  scale_x_continuous(labels = scales::percent) +
+  theme_cowplot()
+write.table(data_result_key_geneset, file = "R_notebook_figures/2025_revision/figure_gene_set_saturation.csv", sep = ',', col.names = T, row.names = F, quote = T)
+pdf(file = "R_notebook_figures/2025_revision/figure_gene_set_saturation.pdf", width = 15, height = 5)
+plot_grid(panel_gene_set_saturation_pearson, panel_gene_set_saturation_spearman, align = 'h', axis = 'tb')
+dev.off()
+```
